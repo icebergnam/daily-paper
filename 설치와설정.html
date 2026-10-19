@@ -69,7 +69,7 @@ footer p{margin:0 0 6px}
 <main>
   <h1>매일 논문 설치와 설정</h1>
   <p class="lead">관심 키워드로 매일 새 논문을 찾아 <b>조테로에 저장</b>하고, <b>PDF를 읽고 요약</b>해서, <b>노션 The Daily Paper</b>에 올리는 Claude 에이전트입니다.</p>
-  <p class="lead">Claude가 할 수 없는 것만 먼저 설치하고(1부, 20분), 나머지는 <b>Claude에게 아래 문장을 차례로 보내면</b> Claude가 설정합니다(2부, 10분).</p>
+  <p class="lead">Claude가 할 수 없는 것만 먼저 설치하고(1부, 20분), 나머지는 <b>Claude에게 “설정해 줘” 한 마디</b>만 보내면 Claude가 묻고 설정합니다(2부, 10분).</p>
   <p class="note">결과는 후보 논문입니다. 원문을 읽기 전에는 논문의 근거로 쓰지 않습니다.</p>
   <nav class="parts" aria-label="목차"><a href="#install">1부 · 미리 설치할 것</a><a href="#claude">2부 · Claude로 설정하기</a></nav>
 
@@ -97,66 +97,39 @@ footer p{margin:0 0 6px}
 
   <section id="claude">
     <h2><span class="no">2부</span>Claude로 설정하기</h2>
-    <p class="sub">Code 탭의 <b>새 세션</b>에서 아래 문장을 차례로 보냅니다. 허용 창이 뜨면 내용을 보고 허용합니다. 키·토큰은 대화창에 붙여넣지 않습니다(Claude도 묻지 않습니다).</p>
-
+    <p class="sub">받은 저장소 폴더를 Code 탭에서 열고 아래 한 마디만 보냅니다. Claude가 아래 6단계를 차례로 묻고 진행합니다. 허용 창이 뜨면 내용을 보고 허용합니다. 키·토큰은 대화창에 붙여넣지 않습니다(Claude도 묻지 않습니다).</p>
     <div class="quick">
-      <p class="t">한 번에 하려면</p>
-      <p>이 한 마디면 Claude가 아래 단계를 순서대로 묻고 진행합니다. 막히면 해당 단계의 문장을 따로 보내세요.</p>
+      <p class="t">이 한 마디면 됩니다</p>
+      <p>중간에 멈췄으면 같은 문장을 다시 보내세요. 끝난 단계는 건너뜁니다.</p>
       <div class="prompt">설정해 줘<button class="copy" type="button">복사</button></div>
     </div>
-
     <ol class="steps">
-      <li class="step"><h3>시작하기</h3>
-        <p>Claude가 연구실 규정상 이 폴더에 넣으면 안 되는 자료를 묻습니다. 모르면 “모름”이라고 답합니다.</p>
-        <div class="prompt">시작<button class="copy" type="button">복사</button></div>
-        <p class="expect">끝나면 <b>“설정을 저장했습니다”</b></p></li>
-
-      <li class="step"><h3>설치 확인</h3>
-        <p>1부에서 빠뜨린 것이 있는지 Claude가 점검 스크립트로 확인합니다.</p>
-        <div class="prompt">설치 확인해 줘. python3 scripts/설정점검.py를 돌리고, 미리 설치할 것 중 빠진 것만 설치 방법과 함께 알려 줘.<button class="copy" type="button">복사</button></div>
-        <p class="expect">❌ 줄은 다음 단계에서 하나씩 없어집니다. <b>✅ 파이썬 · ✅ 조테로</b>가 보이면 됩니다.</p></li>
-
-      <li class="step"><h3>커넥터 이름 맞추기</h3>
-        <p>담당 파일의 커넥터 이름은 계정마다 달라서 빈칸으로 들어 있습니다. Claude가 내 계정의 이름으로 채웁니다.</p>
-        <div class="prompt">담당 파일의 커넥터 빈칸을 채워 줘. 지금 쓸 수 있는 Notion(fetch·notion-create-pages·notion-update-page·notion-update-data-source)과 Exa(web_search_exa·web_fetch_exa) 도구의 실제 이름 앞부분(mcp__…__)을 찾아 .claude/agents/의 mcp__NOTION_ID__, mcp__EXA_ID__ 자리를 바꿔 줘. 연결되지 않은 커넥터는 그대로 두고 알려 줘.<button class="copy" type="button">복사</button></div></li>
-
-      <li class="step"><h3>노션 신문 만들기</h3>
-        <p>내 노션에 The Daily Paper 페이지와 논문 아카이브 데이터베이스를 만들고, 주소를 설정에 적습니다.</p>
-        <div class="prompt">내 노션 개인 페이지에 "The Daily Paper" 페이지를 만들고, 그 안에 인라인 데이터베이스 "논문 아카이브"를 만들어 줘. 칸: 제목(제목), 날짜(날짜), 키워드(선택), 결과 한 줄(텍스트), 저자(텍스트), 연도(숫자), 출처(텍스트), 요약(체크박스), 조테로 저장(체크박스), 원문(URL), 오픈 액세스(URL). 만든 데이터베이스 주소를 설정/매일논문.json의 notion_db_url에 넣고, 데이터베이스 주소와 collection:// 주소를 .claude/skills/daily-paper-format/references/앞면_틀.md의 {아카이브_DB_URL}, {아카이브_DATA_SOURCE_URL} 자리에 넣어 줘.<button class="copy" type="button">복사</button></div>
-        <p class="expect">노션에 <b>The Daily Paper</b> 페이지가 생깁니다. 표지 이미지는 원하면 직접 넣습니다.</p></li>
-
-      <li class="step"><h3>새 세션에서 연결 점검</h3>
-        <p>담당 파일과 판정 훅은 세션을 시작할 때 읽힙니다. 사이드바에서 <b>새 세션</b>을 열고 보냅니다.</p>
-        <div class="prompt">연결 점검해 줘: 설정/매일논문.json의 notion_db_url을 Notion fetch로 열어 "논문 아카이브" 데이터베이스가 보이는지, Exa 도구가 도구 목록에 있는지만 확인해 줘. 아무것도 쓰거나 검색하지 마.<button class="copy" type="button">복사</button></div>
-        <p class="expect"><b>“논문 아카이브가 보인다” · “Exa 도구가 있다”</b></p></li>
-
+      <li class="step"><h3>설치할 것 안내</h3>
+        <p>Claude가 python3, 조테로 7과 <code>자동수집</code> 컬렉션, 노션 가입, Notion·Exa 커넥터 연결을 링크와 함께 보여 줍니다. 1부를 끝냈으면 바로 “했어”라고 답합니다.</p>
+        <p class="expect">사람이 할 일: 빠진 것 설치하고 <b>“했어”</b></p></li>
+      <li class="step"><h3>설치 여부 점검</h3>
+        <p>Claude가 <code>python3 scripts/설정점검.py 설치</code>로 파이썬·OpenAlex·조테로를 보고, 세션의 도구 목록으로 Notion·Exa 커넥터를 확인합니다. 빠진 것만 다시 안내합니다.</p>
+        <p class="expect"><b>✅ 파이썬 · ✅ 조테로 · ✅ Notion</b>이면 다음으로. Exa는 없어도 됩니다.</p>
+        <p class="warn">커넥터를 이 대화를 연 뒤에 연결했다면, 사이드바에서 같은 폴더로 <b>새 세션</b>을 열고 다시 “설정해 줘”를 보냅니다.</p></li>
+      <li class="step"><h3>작업 디렉토리 만들기</h3>
+        <p>개인 값(키워드·노션 주소)과 매일 받는 논문을 저장소와 따로 두려고, 저장소 옆에 <code>daily-paper-workspace</code> 폴더를 만들자고 제안합니다. <b>승인해야</b> 만들고, 다른 경로를 말해도 됩니다. 커넥터 이름 채우기는 Claude가 알아서 합니다.</p>
+        <p class="expect">사람이 할 일: 경로 확인 후 <b>승인</b></p></li>
       <li class="step"><h3>키워드 정하기</h3>
-        <p>[ ] 안을 내 관심 분야로 바꿔 보냅니다. 영어로 2~3단어짜리 구가 좋고, 너무 넓으면(AI) 엉뚱한 논문이 나옵니다.</p>
-        <div class="prompt">내 관심 분야는 [여기에 적기]야. 매일 논문 영어 키워드를 3개 제안해 줘. 내가 고르면 설정/매일논문.json에 적어 줘.<button class="copy" type="button">복사</button></div></li>
-
-      <li class="step"><h3>검색만 시험하기</h3>
-        <p>조테로에 저장하지 않고, 키워드가 논문을 잘 찾는지만 봅니다.</p>
-        <div class="prompt">검색만 한 번 해 줘. python3 scripts/매일논문.py 검색으로 후보를 찾고 제목만 보여 줘.<button class="copy" type="button">복사</button></div>
-        <p class="expect">제목이 관심사와 맞지 않으면 6단계로 돌아가 키워드를 바꿉니다.</p></li>
-
-      <li class="step"><h3>처음 실행하기</h3>
-        <p>조테로 앱을 켜 두고 보냅니다. 5~10분 걸리고, 허용 창(python3 실행, Exa 검색어, 노션 쓰기)이 여러 번 뜹니다.</p>
-        <div class="prompt">오늘 논문 찾아 줘<button class="copy" type="button">복사</button></div>
-        <p class="expect">PDF를 받은 논문만 요약하고(못 받으면 다음 후보로), 판정을 통과해야 노션에 올립니다. 끝나면 <b>노션 앞면 NO.001 · 조테로 자동수집 · Mac 알림</b></p>
+        <p>관심 연구 분야를 한국어로 한두 문장 답하면, Claude가 영어 검색 키워드 2~3개를 만들고 검색을 한 번 돌려 위쪽 제목을 보여 줍니다. 엉뚱한 논문이 많으면 더 좁힌 키워드를 제안합니다.</p>
+        <p class="expect">사람이 할 일: 관심 분야 답하기, 제목 보고 <b>“좋아”</b> 또는 “좁혀 줘”</p></li>
+      <li class="step"><h3>노션 주소 주기</h3>
+        <p>노션에서 빈 페이지를 하나 만들고 오른쪽 위 <b>··· → 링크 복사</b>로 주소를 보냅니다. 없으면 “만들어 줘”. 그 안에 <b>논문 아카이브</b> 데이터베이스(11칸)는 Claude가 자동으로 만들고 주소를 설정에 적습니다.</p>
+        <p class="expect">노션 페이지 안에 <b>논문 아카이브</b> 표가 생기고, 점검이 <b>“설정 완료!”</b></p></li>
+      <li class="step"><h3>시험 삼아 한 번 실행</h3>
+        <p>담당과 판정 훅은 세션을 시작할 때 읽히므로, Claude가 작업공간 폴더로 새 세션을 열어 <code>오늘 논문 찾아 줘</code>를 보냅니다(못 열면 직접 열라고 안내). 조테로 앱을 켜 두세요. 5~10분 걸립니다.</p>
+        <p class="expect">끝나면 <b>노션 앞면 NO.001 · 조테로 자동수집 · Mac 알림</b></p>
         <p class="warn">알림에 “판정 실패로 노션 미업로드”가 뜨면, 요약이 판정 기준을 3번 안에 통과하지 못한 것입니다. <code>매일논문/날짜/판정기록.md</code>를 Claude에게 보여 주고 물어보세요.</p></li>
-
-      <li class="step"><h3>매일 자동으로</h3>
-        <p>시각은 원하는 대로 바꿉니다. 그 시각에 Mac이 켜져 있고 Claude 앱이 열려 있어야 돕니다.</p>
-        <div class="prompt">예약작업_문장.md의 코드 블록 내용으로 예약 작업 daily-papers를 만들어 줘. 매일 오전 9시, 작업 폴더는 이 폴더이고, 문장 속 {이 폴더 경로}는 이 폴더의 실제 경로로 바꿔 줘.<button class="copy" type="button">복사</button></div></li>
-
-      <li class="step"><h3>마지막 점검</h3>
-        <div class="prompt">설정 점검해 줘<button class="copy" type="button">복사</button></div>
-        <p class="expect">마지막 줄이 <b>“설정 완료!”</b>면 끝입니다.</p></li>
     </ol>
+    <p class="sub">앞으로는 <b>작업공간 폴더</b>를 Code 탭에서 열어 씁니다. 매일 자동으로 돌리려면 그 세션에서 이렇게 보냅니다(그 시각에 Mac과 Claude 앱이 켜져 있어야 합니다).</p>
+    <div class="prompt">매일 아침 8시에 예약해 줘<button class="copy" type="button">복사</button></div>
   </section>
-
   <footer>
-    <p>키워드 바꾸기: <code>매일 논문 키워드를 ○○, ○○로 바꿔 줘</code> · 문제가 생기면 증상을 그대로 Claude에게 말하세요.</p>
+    <p>설정을 다시 확인하려면 작업공간 세션에서 <code>설정 점검해 줘</code> · 키워드 바꾸기: <code>매일 논문 키워드를 ○○, ○○로 바꿔 줘</code> · 문제가 생기면 증상을 그대로 Claude에게 말하세요.</p>
     <p>Claude 구독 없이 쓰려면 <a href="단독실행_안내.docx">단독실행_안내.docx</a>를 따르세요(파이썬과 원하는 LLM으로 같은 일을 합니다).</p>
   </footer>
 </main>

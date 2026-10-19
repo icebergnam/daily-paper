@@ -1,6 +1,7 @@
 """매일 논문 설정이 끝났는지 점검한다. 고치지 않고 읽기만 한다.
 
 사용: python3 scripts/설정점검.py        Claude Code로 쓸 때
+      python3 scripts/설정점검.py 설치   설치한 것만(파이썬·OpenAlex·조테로·Mac 알림). 작업공간을 만들기 전에 쓴다
       python3 scripts/설정점검.py 단독   Claude Code 없이 쓸 때(LLM·노션 연결은 매일논문_단독.py 점검)
 노션·Exa 커넥터는 이 스크립트로 확인할 수 없다. Claude에게 "설정해 줘"라고 하면 연결까지 확인한다(설치와설정.html).
 """
@@ -10,6 +11,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 ZOTERO = "http://127.0.0.1:23119/connector/"
 results = []
 SOLO = sys.argv[1:] == ["단독"]
+INSTALL = sys.argv[1:] == ["설치"]
 
 
 def check(name, ok, fix=""):
@@ -26,19 +28,20 @@ def get(url, data=None):
 # 1. 파이썬
 check(f"파이썬 {platform.python_version()}", sys.version_info >= (3, 9), "python3 3.9 이상을 설치하세요 (python.org).")
 
-# 2. 연구자 정보
-info = (ROOT / "설정/연구자_정보.md").read_text()
-blank = [line for line in info.splitlines() if line.startswith("- ") and line.rstrip().endswith(":")]
-check("연구자 정보", not blank, "Claude에게 '시작'이라고 보내면 묻고 채웁니다.")
+if not INSTALL:  # 설치 점검에서는 개인 설정을 보지 않는다(작업공간을 만들기 전이라 비어 있다)
+    # 2. 연구자 정보
+    info = (ROOT / "설정/연구자_정보.md").read_text()
+    blank = [line for line in info.splitlines() if line.startswith("- ") and line.rstrip().endswith(":")]
+    check("연구자 정보", not blank, "설정/연구자_정보.md의 빈 칸을 채우세요. 모르면 '모름'.")
 
-# 3. 매일 논문 설정
-cfg = json.loads((ROOT / "설정/매일논문.json").read_text())
-check(f"키워드 {cfg['키워드']}", bool(cfg["키워드"]), '설정/매일논문.json의 "키워드"에 영어 키워드를 1개 이상 적으세요.')
-check(f"찾을_편수 {cfg['찾을_편수']} · 요약할_편수 {cfg['요약할_편수']}",
-      isinstance(cfg["찾을_편수"], int) and isinstance(cfg["요약할_편수"], int) and 0 < cfg["요약할_편수"] <= cfg["찾을_편수"],
-      "두 값은 숫자이고, 요약할_편수는 찾을_편수 이하여야 합니다.")
-if not SOLO:
-    check("notion_db_url", bool(cfg.get("notion_db_url")), "Claude에게 '설정해 줘'라고 보내세요(노션 표지 만들기).")
+    # 3. 매일 논문 설정
+    cfg = json.loads((ROOT / "설정/매일논문.json").read_text())
+    check(f"키워드 {cfg['키워드']}", bool(cfg["키워드"]), '설정/매일논문.json의 "키워드"에 영어 키워드를 1개 이상 적으세요.')
+    check(f"찾을_편수 {cfg['찾을_편수']} · 요약할_편수 {cfg['요약할_편수']}",
+          isinstance(cfg["찾을_편수"], int) and isinstance(cfg["요약할_편수"], int) and 0 < cfg["요약할_편수"] <= cfg["찾을_편수"],
+          "두 값은 숫자이고, 요약할_편수는 찾을_편수 이하여야 합니다.")
+    if not SOLO:
+        check("notion_db_url", bool(cfg.get("notion_db_url")), "Claude에게 '설정해 줘'라고 보내세요(노션 주소를 받아 데이터베이스를 만듭니다).")
 
 # 4. OpenAlex
 try:
@@ -56,7 +59,7 @@ try:
 except Exception:
     check("조테로 데스크톱 앱 켜짐", False, "조테로 7 데스크톱 앱을 켜 두세요. 설정 → 고급 → '다른 앱과 통신 허용'이 켜져 있어야 합니다.")
 
-if not SOLO:  # Claude Code 전용 점검
+if not SOLO and not INSTALL:  # Claude Code 전용 점검(작업공간 설정)
     # 6. 담당 파일의 커넥터 이름
     holes = [f.name for f in (ROOT / ".claude/agents").glob("*.md") if "_ID__" in f.read_text()]
     check("담당 파일의 커넥터 이름", not holes, f"{', '.join(holes)}에 빈칸이 남았습니다. Claude에게 '설정해 줘'라고 보내세요.")
@@ -73,4 +76,5 @@ if not SOLO:  # Claude Code 전용 점검
 # 9. Mac 알림 (없어도 실행은 됨)
 print(("✅ " if shutil.which("osascript") else "⚠️  ") + "Mac 알림" + ("" if shutil.which("osascript") else " 없음: Mac이 아니면 마지막 알림만 안 뜹니다."))
 
-print(f"\n{sum(results)}/{len(results)} 통과" + (" — 설정 완료!" if all(results) else ""))
+done = " — 설치 확인 완료! 노션·Exa 커넥터는 Claude가 세션의 도구 목록으로 확인합니다." if INSTALL else " — 설정 완료!"
+print(f"\n{sum(results)}/{len(results)} 통과" + (done if all(results) else ""))
