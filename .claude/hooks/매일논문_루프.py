@@ -95,6 +95,8 @@ def judge_round(day, when):
 
 def main():
     inp = json.load(sys.stdin)
+    if os.environ.get("DAILY_PAPER_TEST"):  # 대시보드의 담당 시험(매일논문/시험/만 씀)은 그날 판정으로 막지 않는다
+        sys.exit(0)
     day = active_day()
     if not day:
         sys.exit(0)

@@ -97,40 +97,41 @@ footer p{margin:0 0 6px}
 
   <section id="claude">
     <h2><span class="no">2부</span>Claude로 설정하기</h2>
-    <p class="sub">받은 저장소 폴더를 Code 탭에서 열고 아래 한 마디만 보냅니다. Claude가 아래 6단계를 차례로 묻고 진행합니다. 허용 창이 뜨면 내용을 보고 허용합니다. 키·토큰은 대화창에 붙여넣지 않습니다(Claude도 묻지 않습니다).</p>
+    <p class="sub">받은 저장소 폴더를 Code 탭에서 열고 아래 한 마디만 보냅니다. Claude가 기본(로그인·작업공간)을 갖춘 뒤 <b>담당 에이전트 순서</b>(찾기 → 조테로 → 요약 → 노션)로 담당마다 필요한 것만 묻고 진행합니다. 7단계입니다. 허용 창이 뜨면 내용을 보고 허용합니다. 키·토큰은 대화창에 붙여넣지 않습니다(Claude도 묻지 않습니다).</p>
     <div class="quick">
       <p class="t">이 한 마디면 됩니다</p>
       <p>중간에 멈췄으면 같은 문장을 다시 보내세요. 끝난 단계는 건너뜁니다.</p>
       <div class="prompt">설정해 줘<button class="copy" type="button">복사</button></div>
     </div>
     <ol class="steps">
-      <li class="step"><h3>설치할 것 안내</h3>
-        <p>Claude가 python3, 조테로 7과 <code>자동수집</code> 컬렉션, 노션 가입, Notion·Exa 커넥터 연결을 링크와 함께 보여 줍니다. 1부를 끝냈으면 바로 “했어”라고 답합니다.</p>
-        <p class="expect">사람이 할 일: 빠진 것 설치하고 <b>“했어”</b></p></li>
-      <li class="step"><h3>설치 여부 점검</h3>
-        <p>Claude가 <code>python3 scripts/설정점검.py 설치</code>로 파이썬·OpenAlex·조테로를 보고, 세션의 도구 목록으로 Notion·Exa 커넥터를 확인합니다. 빠진 것만 다시 안내합니다.</p>
-        <p class="expect"><b>✅ 파이썬 · ✅ 조테로 · ✅ Notion</b>이면 다음으로. Exa는 없어도 됩니다.</p>
+      <li class="step"><h3>기본 · Claude Code 로그인과 설치 점검</h3>
+        <p>Claude가 Claude Code 로그인, python3, 담당마다 필요한 것(Exa 커넥터, 조테로 7과 <code>자동수집</code> 컬렉션, 노션 가입·Notion 커넥터)을 링크와 함께 보여 주고, <code>python3 scripts/설정점검.py 설치</code>와 세션의 도구 목록으로 확인합니다. 빠진 것만 다시 안내합니다.</p>
+        <p class="expect">사람이 할 일: 빠진 것 설치하고 <b>“했어”</b>. <b>✅ Claude Code · ✅ 파이썬 · ✅ Notion</b>이면 다음으로</p>
         <p class="warn">커넥터를 이 대화를 연 뒤에 연결했다면, 사이드바에서 같은 폴더로 <b>새 세션</b>을 열고 다시 “설정해 줘”를 보냅니다.</p></li>
-      <li class="step"><h3>작업 디렉토리 만들기</h3>
-        <p>개인 값(키워드·노션 주소)과 매일 받는 논문을 저장소와 따로 두려고, 저장소 옆에 <code>daily-paper-workspace</code> 폴더를 만들자고 제안합니다. <b>승인해야</b> 만들고, 다른 경로를 말해도 됩니다. 커넥터 이름 채우기는 Claude가 알아서 합니다.</p>
+      <li class="step"><h3>기본 · 작업공간 만들기</h3>
+        <p>개인 값(키워드·노션 주소)과 매일 받는 논문을 git에 올라가지 않게 두려고, 저장소 안에 <code>workspace</code> 폴더(<code>.gitignore</code>로 뺌)를 만들자고 제안합니다. <b>승인해야</b> 만들고, 다른 경로를 말해도 됩니다.</p>
         <p class="expect">사람이 할 일: 경로 확인 후 <b>승인</b></p></li>
-      <li class="step"><h3>키워드 정하기</h3>
-        <p>관심 연구 분야를 한국어로 한두 문장 답하면, Claude가 영어 검색 키워드 2~3개를 만들고 검색을 한 번 돌려 위쪽 제목을 보여 줍니다. 엉뚱한 논문이 많으면 더 좁힌 키워드를 제안합니다.</p>
+      <li class="step"><h3>찾기 · paper-scout</h3>
+        <p>Claude가 paper-scout에 Exa 커넥터 이름을 채웁니다. 관심 연구 분야를 한국어로 한두 문장 답하면 영어 검색 키워드 2~3개를 만들고 검색을 한 번 돌려 위쪽 제목을 보여 줍니다. 엉뚱한 논문이 많으면 더 좁힌 키워드를 제안합니다.</p>
         <p class="expect">사람이 할 일: 관심 분야 답하기, 제목 보고 <b>“좋아”</b> 또는 “좁혀 줘”</p></li>
-      <li class="step"><h3>노션 주소 주기</h3>
-        <p>노션에서 빈 페이지를 하나 만들고 오른쪽 위 <b>··· → 링크 복사</b>로 주소를 보냅니다. 없으면 “만들어 줘”. 그 안에 <b>논문 아카이브</b> 데이터베이스(11칸)는 Claude가 자동으로 만들고 주소를 설정에 적습니다.</p>
-        <p class="expect">노션 페이지 안에 <b>논문 아카이브</b> 표가 생기고, 점검이 <b>“설정 완료!”</b></p></li>
-      <li class="step"><h3>시험 삼아 한 번 실행</h3>
-        <p>담당과 판정 훅은 세션을 시작할 때 읽히므로, Claude가 작업공간 폴더로 새 세션을 열어 <code>오늘 논문 찾아 줘</code>를 보냅니다(못 열면 직접 열라고 안내). 조테로 앱을 켜 두세요. 5~10분 걸립니다.</p>
+      <li class="step"><h3>조테로 · zotero-keeper (선택)</h3>
+        <p>쓸지 먼저 정합니다. 쓰면 zotero-keeper가 고른 논문을 조테로 컬렉션(기본 <code>자동수집</code>)에 저장하고, 시험으로 한 편을 <code>시험</code> 태그로 실제로 저장해 봅니다.</p>
+        <p class="expect"><b>✅ 조테로 앱 · ✅ 자동수집 컬렉션</b>. 조테로를 안 쓰면 건너뛰어도 됩니다</p></li>
+      <li class="step"><h3>요약 · paper-reader (선택)</h3>
+        <p>쓸지 먼저 정합니다. 쓰면 받은 논문 중 몇 편을 요약할지(기본 2편) 정하고, 시험으로 한 편을 실제로 요약해 판정 기준으로 점검합니다. 요약은 PDF를 받은 논문만 합니다. 안 쓰면 노션에는 초록만 올라갑니다.</p>
+        <p class="expect">사람이 할 일: 쓸지 답하기, 시험 실행</p></li>
+      <li class="step"><h3>노션 · privacy-guard → notion-publisher (필수)</h3>
+        <p>privacy-guard가 올리기 전에 볼 “넣으면 안 되는 자료”를 확인하고, 시험으로 실제 결과는 통과시키고 가짜 민감 자료는 막는지 봅니다. 노션에서 빈 페이지를 하나 만들고 오른쪽 위 <b>··· → 링크 복사</b>로 주소를 넣고 <b>새로 시작</b>을 누르면, notion-publisher가 그 안에 <b>논문 아카이브</b>(11칸)와 표지를 만들고 시험 줄 한 편을 올려 봅니다.</p>
+        <p class="expect">노션 페이지 안에 <b>논문 아카이브</b> 표가 생기고, 시험이 <b>통과</b></p></li>
+      <li class="step"><h3>연결 시험 · 담당 전부 한 번에</h3>
+        <p>담당과 판정 훅은 세션을 시작할 때 읽히므로, Claude가 작업공간 폴더로 새 세션을 열어 <code>오늘 논문 찾아 줘</code>를 보냅니다(못 열면 직접 열라고 안내). 담당이 찾기 → 조테로 → 요약 → 노션 순서로 이어서 일합니다. 조테로 앱을 켜 두세요. 5~10분 걸립니다.</p>
         <p class="expect">끝나면 <b>노션 앞면 NO.001 · 조테로 자동수집 · Mac 알림</b></p>
         <p class="warn">알림에 “판정 실패로 노션 미업로드”가 뜨면, 요약이 판정 기준을 3번 안에 통과하지 못한 것입니다. <code>매일논문/날짜/판정기록.md</code>를 Claude에게 보여 주고 물어보세요.</p></li>
     </ol>
-    <p class="sub">앞으로는 <b>작업공간 폴더</b>를 Code 탭에서 열어 씁니다. 매일 자동으로 돌리려면 그 세션에서 이렇게 보냅니다(그 시각에 Mac과 Claude 앱이 켜져 있어야 합니다).</p>
-    <div class="prompt">매일 아침 8시에 예약해 줘<button class="copy" type="button">복사</button></div>
+    <p class="sub">앞으로는 <b>작업공간 폴더</b>에서 대시보드(<code>python3 scripts/대시보드.py</code>)를 열어 씁니다. 매일 자동으로 돌리려면 현황의 <b>매일 예약</b>에서 시각을 정하세요(그 시각에 Mac이 켜져 있어야 합니다).</p>
   </section>
   <footer>
     <p>설정을 다시 확인하려면 작업공간 세션에서 <code>설정 점검해 줘</code> · 키워드 바꾸기: <code>매일 논문 키워드를 ○○, ○○로 바꿔 줘</code> · 문제가 생기면 증상을 그대로 Claude에게 말하세요.</p>
-    <p>Claude 구독 없이 쓰려면 <a href="단독실행_안내.docx">단독실행_안내.docx</a>를 따르세요(파이썬과 원하는 LLM으로 같은 일을 합니다).</p>
   </footer>
 </main>
 <script>

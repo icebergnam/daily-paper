@@ -1,6 +1,7 @@
 """매일 논문 판정: 그날 요약(D*.md)과 다이제스트가 '끝났다'의 기준을 지켰는지 코드로 판정한다.
 
 사용: python3 scripts/매일논문_판정.py [날짜]   (날짜를 빼면 가장 최근 날짜 폴더)
+      python3 scripts/매일논문_판정.py 요약 {폴더}   요약 기준(J1~J5, J7)만. paper-reader 시험에서 쓴다
 출력 약속(루프 훅이 이대로 읽음, 바꾸지 않음):
   실패 하나마다 한 줄 `FAIL <기준> <ID>: <이유>`, 마지막 줄 `판정 결과: 실패 N개`
   종료 코드: 실패 없으면 0, 있으면 1, 읽을 수 없으면 2
@@ -43,9 +44,8 @@ def nums(text):
     return found | {str(i) for i, w in enumerate(WORDS) if re.search(rf"\b{w}\b", text, re.I)}
 
 
-def judge(day):
+def judge_summaries(day, papers):
     fails = []
-    papers = json.loads((day / "목록.json").read_text())
     for p in (p for p in papers if p.get("summarize")):
         i = p["id"]
         if not ((day / f"{i}.pdf").exists() or (day / f"{i}_원문.pdf").exists()):
@@ -78,7 +78,12 @@ def judge(day):
                 missing = sorted(nums(text) - nums(src))
                 if missing:
                     fails.append(f"J5 {i}: '{item}'의 숫자 {', '.join(missing)}가 원문에 없음")
+    return fails
 
+
+def judge(day):
+    papers = json.loads((day / "목록.json").read_text())
+    fails = judge_summaries(day, papers)
     dg_path = day / "다이제스트.md"
     if not dg_path.exists():
         return fails + ["J6 다이제스트: 다이제스트.md가 없음"]
@@ -103,11 +108,12 @@ def latest_day():
 
 
 if __name__ == "__main__":
-    day = OUT / sys.argv[1] if len(sys.argv) > 1 else latest_day()
+    only = sys.argv[1:2] == ["요약"] and len(sys.argv) == 3
+    day = (OUT.parent / sys.argv[2] if only else OUT / sys.argv[1]) if len(sys.argv) > 1 else latest_day()
     if not day or not (day / "목록.json").exists():
         print("판정할 수 없음: 목록.json이 없습니다")
         sys.exit(2)
-    fails = judge(day)
+    fails = judge_summaries(day, json.loads((day / "목록.json").read_text())) if only else judge(day)
     for f in fails:
         print("FAIL " + f)
     print(f"판정 결과: 실패 {len(fails)}개")

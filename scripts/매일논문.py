@@ -1,25 +1,28 @@
-"""매일 논문: 설정의 키워드로 최근 논문을 찾아 조테로에 저장하고, 요약할 논문의 파일을 만든다.
+"""매일 논문: 후보를 합쳐 그날 논문을 고르고 PDF를 받아, 요약할 논문의 파일을 만든다. 조테로 저장은 zotero-keeper 스킬이 한다.
 
-사용:
-  python3 scripts/매일논문.py 검색   OpenAlex 후보 → 매일논문/{날짜}/후보_openalex.json
-  (그다음 paper-scout 담당이 Exa 후보 → 매일논문/{날짜}/후보_exa.json)
-  python3 scripts/매일논문.py 저장   두 후보를 합쳐 N편 선정 → 조테로 저장 → PDF 받기
+사용(스킬 daily-paper의 4단계. 그 앞에서 paper-scout가 후보_openalex.json·후보_exa.json·제외.json을 쓴다):
+  python3 scripts/매일논문.py 저장   두 후보를 합쳐 N편 선정(paper-scout가 거른 제외.json은 빼고) → PDF 받기
                                      → 목록.json, D01.txt(서지·초록), D01.pdf(받았으면)
-  인자 없이 실행하면 검색과 저장을 이어서 한다(Exa 없이).
+  python3 scripts/매일논문.py 시험준비   paper-reader 시험용 한 편(대시보드가 부른다)
+하루에 여러 번 받을 수 있다. 오늘 목록.json이 있으면 뒤에 이어 붙이고 ID도 이어서 매긴다(D03, D04…).
+  기본(자동): 오늘 받은 편수가 설정 '찾을_편수'에 닿았으면 "오늘 이미 실행함"으로 건너뛰고, 모자라면 모자란 만큼만 받는다.
+  '추가'를 붙이면(저장 추가) 언제든 설정 편수만큼 더 받는다.
+새로 받은 ID는 "새 논문: D03 D04" 줄에 찍힌다. 이어 붙이면 노션완료.txt·판정상태.json을 지워 그날을 다시 열어 둔다.
 PDF는 OpenAlex 오픈 액세스 → Semantic Scholar 오픈 액세스 순으로 받는다. 못 받은 논문 ID는 마지막 줄에 찍힌다.
-조테로는 데스크톱 앱이 켜져 있어야 저장된다(로컬 커넥터, 키 필요 없음). '자동수집' 컬렉션에 들어간다.
+조테로 저장은 이어서 zotero-keeper가 한다(zotero_saved는 처음엔 false, 설정/zotero-keeper.json "사용"이 false면 이유가 "사용 안 함").
 """
-import datetime, json, pathlib, re, sys, urllib.parse, urllib.request, uuid
+import datetime, importlib.util, json, pathlib, re, sys, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "매일논문"
 SEEN = OUT / "seen.txt"
 CFG = ROOT / "설정/매일논문.json"
-DAYS_BACK = 30  # ponytail: 최근 30일 고정, 바꿀 일이 생기면 설정으로 옮김
-SPARE = 5  # 키워드마다 찾을_편수의 몇 배를 후보로 받나. PDF를 못 받은 논문 대신 다음 후보로 바꾸기 위해
-ZOTERO = "http://127.0.0.1:23119/connector/"
-COLLECTION = "자동수집"
-UA = {"User-Agent": "daily-papers/1"}  # 조테로는 브라우저 같은 User-Agent를 막는다
+# OpenAlex 검색과 중복 판단은 paper-scout 스킬의 것을 쓴다(키워드·기간은 설정/paper-scout.json)
+_spec = importlib.util.spec_from_file_location("openalex", ROOT / ".claude/skills/paper-scout/scripts/openalex.py")
+scout = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(scout)
+keys = scout.keys
+UA = {"User-Agent": "daily-papers/1"}
 PDF_UA = {"User-Agent": "Mozilla/5.0 (daily-papers)"}  # 출판사는 브라우저가 아니면 PDF를 안 주기도 한다
 
 
@@ -34,74 +37,9 @@ def get_json(url, data=None):
     return json.loads(body) if body else None
 
 
-def abstract(inv):
-    if not inv:
-        return ""
-    pos = sorted((i, w) for w, idx in inv.items() for i in idx)
-    return " ".join(w for _, w in pos)
-
-
-def norm_title(t):
-    return re.sub(r"[^a-z0-9]", "", (t or "").lower())[:120]
-
-
-def keys(p):
-    """중복 판단에 쓰는 열쇠들: OpenAlex ID, DOI, 정리한 제목."""
-    return {k for k in (p.get("openalex"), (p.get("doi") or "").lower(), "t:" + norm_title(p["title"])) if k and k != "t:"}
-
-
-def to_paper(w, keyword):
-    loc = w.get("primary_location") or {}
-    return {
-        "source": "openalex",
-        "openalex": w["id"].rsplit("/", 1)[-1],
-        "title": w.get("title") or "",
-        "authors": [a["author"]["display_name"] for a in w.get("authorships", [])],
-        "year": w.get("publication_year"),
-        "date": w.get("publication_date"),
-        "venue": (loc.get("source") or {}).get("display_name") or "",
-        "doi": (w.get("doi") or "").replace("https://doi.org/", ""),
-        "url": w.get("doi") or loc.get("landing_page_url") or w["id"],
-        "oa_url": (w.get("open_access") or {}).get("oa_url"),
-        "keyword": keyword,
-        "abstract": abstract(w.get("abstract_inverted_index")),
-    }
-
-
-def search(keyword, n):
-    since = (datetime.date.today() - datetime.timedelta(days=DAYS_BACK)).isoformat()
-    q = urllib.parse.urlencode({"search": keyword, "filter": f"from_publication_date:{since},type:article|preprint|review",
-                                "sort": "relevance_score:desc", "per-page": n})
-    return [to_paper(w, keyword) for w in get_json(f"https://api.openalex.org/works?{q}")["results"]]
-
-
-def save_zotero(p, today):
-    creators = []
-    for name in p["authors"]:
-        first, _, last = name.rpartition(" ")
-        creators.append({"firstName": first, "lastName": last or name, "creatorType": "author"})
-    item = {"itemType": "journalArticle", "title": p["title"], "creators": creators, "date": p.get("date") or "",
-            "publicationTitle": p.get("venue") or "", "DOI": p.get("doi") or "", "url": p["url"],
-            "abstractNote": p.get("abstract") or "",
-            "tags": [{"tag": "자동수집"}, {"tag": today}, {"tag": p["keyword"]}], "id": str(uuid.uuid4())}
-    sid = str(uuid.uuid4())
-    try:
-        targets = get_json(ZOTERO + "getSelectedCollection", b"{}")["targets"]
-        target = next(t["id"] for t in targets if t["name"] == COLLECTION)
-        get_json(ZOTERO + "saveItems", json.dumps({"items": [item], "uri": p["url"], "sessionID": sid}).encode())
-        get_json(ZOTERO + "updateSession", json.dumps({"sessionID": sid, "target": target}).encode())
-        return True
-    except StopIteration:
-        p["zotero_error"] = f"조테로에 '{COLLECTION}' 컬렉션이 없음"
-        return False
-    except Exception as e:
-        p["zotero_error"] = str(e)
-        return False
-
-
 def pdf_urls(p):
     """오픈 액세스 PDF 후보 주소: OpenAlex → Semantic Scholar."""
-    urls = [p["oa_url"]] if p.get("oa_url") else []
+    urls = [u for u in (p.get("pdf_url"), p.get("oa_url")) if u]  # paper-scout가 찾은 PDF 주소가 먼저
     m = re.search(r"arxiv\.org/(?:abs|pdf)/([\w.\-/]+?)(?:v\d+)?(?:\.pdf)?$", p.get("url") or "")
     if m:  # arXiv는 주소에서 PDF 주소를 바로 만든다
         urls.append(f"https://arxiv.org/pdf/{m.group(1)}")
@@ -129,25 +67,48 @@ def fetch_pdf(p, dest):
     return False
 
 
-def cmd_search(cfg, day, seen):
-    day.mkdir(parents=True, exist_ok=True)
-    found = [p for k in cfg["키워드"] for p in search(k, min(200, cfg["찾을_편수"] * SPARE)) if not keys(p) & seen]
-    (day / "후보_openalex.json").write_text(json.dumps(found, ensure_ascii=False, indent=1))
-    print(f"OpenAlex 후보 {len(found)}편 → {day / '후보_openalex.json'}")
+def write_bib(day, p):
+    """paper-reader가 읽는 서지·초록 파일 {ID}.txt."""
+    (day / f"{p['id']}.txt").write_text(
+        f"제목: {p['title']}\n저자: {', '.join(p['authors'])}\n연도: {p.get('year') or ''}\n"
+        f"출처: {p.get('venue') or ''}\nDOI/URL: {p['url']}\n\n초록:\n{p.get('abstract') or '초록 없음'}\n")
 
 
-def cmd_save(cfg, day, seen, today):
-    n, m = cfg["찾을_편수"], cfg["요약할_편수"]
-    since = (datetime.date.today() - datetime.timedelta(days=DAYS_BACK)).isoformat()
+def cmd_test_prep():
+    """paper-reader 시험 준비: paper-scout 시험 후보(거른 것 빼고) 중 PDF를 받은 첫 편을 매일논문/시험/paper-reader/D01로 둔다.
+    PDF를 받은 후보가 없으면 첫 후보의 초록만 둔다(그러면 판정 J7이 실패로 알린다). 그날 논문·seen.txt는 건드리지 않는다."""
+    src, out = OUT / "시험/paper-scout", OUT / "시험/paper-reader"
+    drop = {x.get("openalex") for x in json.loads((src / "제외.json").read_text())} - {None, ""} if (src / "제외.json").exists() else set()
+    pool = [p for f in ("후보_openalex.json", "후보_exa.json") if (src / f).exists()
+            for p in json.loads((src / f).read_text()) if p.get("openalex") not in drop or not p.get("openalex")]
+    if not pool:
+        sys.exit("paper-scout 시험 후보가 없습니다. 논문 찾기 단계의 시험을 먼저 하세요")
+    out.mkdir(parents=True, exist_ok=True)
+    p = next((p for p in pool[:8] if fetch_pdf(p, out / "D01.pdf")), pool[0])  # ponytail: 앞 8편만 시도
+    p.setdefault("authors", [])
+    p |= {"id": "D01", "summarize": True, "fulltext": "pdf" if (out / "D01.pdf").exists() else "abstract"}
+    write_bib(out, p)
+    (out / "목록.json").write_text(json.dumps([p], ensure_ascii=False, indent=1))
+    print(f"시험 논문: {p['title']} ({'PDF 받음' if (out / 'D01.pdf').exists() else 'PDF 못 받음, 초록만'})")
+
+
+def cmd_save(day, seen, n, m, old):
+    since = (datetime.date.today() - datetime.timedelta(days=scout.cfg().get("기간_일", 30))).isoformat()
     lists = {}
+    # paper-scout가 키워드 분야와 관계없다고 거른 OpenAlex 후보(Exa는 남은 것만 후보 파일에 쓴다)
+    drop = {x.get("openalex") for x in (json.loads((day / "제외.json").read_text()) if (day / "제외.json").exists() else [])} - {None, ""}
     for name in ("후보_openalex.json", "후보_exa.json"):
         f = day / name
         for p in json.loads(f.read_text()) if f.exists() else []:
+            if p.get("openalex") in drop:
+                continue
             p.setdefault("source", "exa")
             p.setdefault("authors", [])
             if (p.get("date") or "9999")[:10] < since:  # 날짜가 있는데 30일보다 오래된 후보는 뺀다
                 continue
             lists.setdefault(p["keyword"], []).append(p)
+    for q in lists.values():  # 키워드 안에서는 PDF 주소가 있는 후보를 앞으로(나머지 순서는 그대로)
+        q.sort(key=lambda p: not (p.get("pdf_url") or p.get("oa_url")))
     # 키워드마다 돌아가며 줄 세운다(OpenAlex 먼저, 중복·이미 본 논문 제외)
     pool, queues, used = [], list(lists.values()), set()
     while any(queues):
@@ -159,59 +120,82 @@ def cmd_save(cfg, day, seen, today):
                     pool.append(p)
                     break
 
-    # 요약 자리는 PDF를 실제로 받은 논문만. 못 받으면 그 논문은 건너뛰고 다음 후보를 찾는다(판정 J7)
+    # 찾을 편수를 모두 PDF를 실제로 받은 논문으로 채운다. 못 받으면 그 논문은 건너뛰고 다음 후보로(판정 J7)
+    # 요약은 그중 앞의 m편. PDF 받은 논문이 n편보다 적을 때만 PDF 없는 후보로 나머지를 채운다
     with_pdf, tried = [], 0
     for p in pool:
-        if len(with_pdf) >= m:
+        if len(with_pdf) >= n:
             break
         tmp = day / f"_tmp{tried}.pdf"
         tried += 1
         if fetch_pdf(p, tmp):
             with_pdf.append(p)
             p["_tmp"] = tmp
-    summ = with_pdf
-    if len(summ) < m:
-        print(f"PDF를 받은 후보가 {len(summ)}편뿐이라 {len(summ)}편만 요약합니다(후보 {tried}편 시도)")
-    picked = (summ + [p for p in pool if p not in summ])[:n]
+    if len(with_pdf) < n:
+        print(f"PDF를 받은 후보가 {len(with_pdf)}편뿐입니다(후보 {tried}편 시도). 나머지는 PDF 없는 후보로 채웁니다")
+    summ = with_pdf[:m]
+    picked = (with_pdf + [p for p in pool if p not in with_pdf])[:n]
     seen |= {k for p in picked for k in keys(p)}
 
-    for i, p in enumerate(picked, 1):
+    if not picked:
+        for f in day.glob("_tmp*.pdf"):
+            f.unlink()
+        print("새 논문이 없습니다(오늘 후보를 다 봤습니다)")
+        return
+    batch = max((p.get("batch", 1) for p in old), default=0) + 1
+    zf = ROOT / "설정/zotero-keeper.json"
+    zotero_on = json.loads(zf.read_text()).get("사용", True) if zf.exists() else True
+    for i, p in enumerate(picked, len(old) + 1):
         p["id"] = f"D{i:02d}"
-        p["zotero_saved"] = save_zotero(p, today)
+        p["batch"] = batch
+        p["zotero_saved"], p["zotero_error"] = False, "아직 저장 안 함" if zotero_on else "사용 안 함"
         p["summarize"] = p in summ
         tmp = p.pop("_tmp", None)
-        if p["summarize"]:
-            (day / f"{p['id']}.txt").write_text(
-                f"제목: {p['title']}\n저자: {', '.join(p['authors'])}\n연도: {p.get('year') or ''}\n"
-                f"출처: {p.get('venue') or ''}\nDOI/URL: {p['url']}\n\n초록:\n{p.get('abstract') or '초록 없음'}\n")
-            p["fulltext"] = "pdf"
+        if tmp:  # 요약하지 않는 논문도 받은 PDF는 남긴다
             tmp.rename(day / f"{p['id']}.pdf")
+        if p["summarize"]:
+            write_bib(day, p)
+            p["fulltext"] = "pdf"
     for f in day.glob("_tmp*.pdf"):
         f.unlink()
-    (day / "목록.json").write_text(json.dumps(picked, ensure_ascii=False, indent=1))
+    (day / "목록.json").write_text(json.dumps(old + picked, ensure_ascii=False, indent=1))
     SEEN.write_text("\n".join(sorted(seen)) + "\n")
-    saved = sum(p["zotero_saved"] for p in picked)
-    print(f"찾음 {len(picked)}편, 조테로 저장 {saved}편, 요약 대상 {len(summ)}편 → {day}")
-    print("PDF 못 받음: 없음")  # 요약 대상은 모두 PDF가 있다. 담당 흐름이 이 줄을 읽으므로 남겨 둔다
+    if old:  # 새 논문이 붙었으니 그날을 다시 연다: 노션에 새 줄을 올리고 판정 루프를 처음부터
+        for f in ("노션완료.txt", "판정상태.json"):
+            (day / f).unlink(missing_ok=True)
+    print(f"찾음 {len(picked)}편, 요약 대상 {len(summ)}편 → {day}" + (f" (오늘 모두 {len(old) + len(picked)}편)" if old else ""))
+    print("새 논문: " + " ".join(p["id"] for p in picked))
+    print("PDF 못 받음: " + (" ".join(p["id"] for p in picked if not (day / f"{p['id']}.pdf").exists()) or "없음"))
 
 
 def main():
+    if (ROOT / ".git").exists():  # 공개 저장소에 개인 결과를 만들지 않는다
+        sys.exit("원본 저장소에서는 실행하지 않습니다. workspace 폴더에서 실행하세요.")
     cfg = json.loads(CFG.read_text())
-    if not cfg["키워드"]:
-        print("키워드가 비어 있습니다. 설정/매일논문.json에 키워드를 적어 주세요.")
+    if not scout.cfg()["키워드"]:
+        print("키워드가 비어 있습니다. 설정/paper-scout.json에 키워드를 적어 주세요.")
         return
     today = datetime.date.today().isoformat()
     day = OUT / today
-    if (day / "목록.json").exists():
-        print(f"오늘 이미 실행함: {day / '목록.json'}")
-        return
+    old = json.loads((day / "목록.json").read_text()) if (day / "목록.json").exists() else []
+    rf = ROOT / "설정/paper-reader.json"  # 요약은 paper-reader(선택) 설정: 사용 안 함이면 요약 0편(PDF는 그대로 받는다)
+    r = json.loads(rf.read_text()) if rf.exists() else {"사용": True, "요약할_편수": 2}
+    n, m = cfg["찾을_편수"], r["요약할_편수"] if r.get("사용", True) else 0
+    if "추가" not in sys.argv[1:]:  # 자동: 설정 편수를 채웠으면 건너뛰고, 모자라면 그만큼만
+        n, m = n - len(old), m - sum(bool(p.get("summarize")) for p in old)
+        if n <= 0:
+            print(f"오늘 이미 실행함: {len(old)}편(설정 {cfg['찾을_편수']}편) → {day / '목록.json'}")
+            return
+    m = max(0, min(m, n))
     seen = set(SEEN.read_text().split()) if SEEN.exists() else set()
-    step = sys.argv[1] if len(sys.argv) > 1 else "전부"
-    if step in ("검색", "전부"):
-        cmd_search(cfg, day, seen)
-    if step in ("저장", "전부"):
-        cmd_save(cfg, day, seen, today)
+    day.mkdir(parents=True, exist_ok=True)
+    cmd_save(day, seen, n, m, old)
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["시험준비"]:
+        cmd_test_prep()
+    elif sys.argv[1:2] == ["저장"]:
+        main()
+    else:
+        sys.exit(__doc__)
