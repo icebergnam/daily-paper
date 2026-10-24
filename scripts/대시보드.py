@@ -824,6 +824,17 @@ textarea{font-family:var(--mono);font-size:13px;line-height:1.6;min-height:110px
 .btn:hover{opacity:.88}.btn:disabled{opacity:.45;cursor:default}
 .btn.ghost{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--line2)}
 .btn.ghost:hover{background:var(--surface2);opacity:1}
+.btn.primary{background:var(--accent);color:var(--bg);padding:10px 18px;font-size:14.5px}
+.todo{background:var(--accent-bg);border:2px solid var(--accent);border-radius:var(--r);padding:16px 20px;margin-bottom:16px}
+.todo-h{font-weight:700;color:var(--accent);margin-bottom:10px}
+.todo ol{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:7px}
+.todo li{display:flex;gap:9px;align-items:center;color:var(--text2)}.todo li.cur{color:var(--text);font-weight:700}.todo li.dn{color:var(--ok)}
+.tnum{width:22px;height:22px;border-radius:50%;display:inline-grid;place-items:center;font-size:12px;background:var(--surface);flex:none}
+.todo li.cur .tnum{background:var(--accent);color:var(--bg)}.todo li.dn .tnum{background:var(--ok-bg);color:var(--ok)}
+.card.focus{box-shadow:0 0 0 2px var(--accent),var(--shadow)}
+@keyframes flash{0%{box-shadow:0 0 0 7px var(--accent)}100%{box-shadow:0 0 0 2px var(--accent),var(--shadow)}}
+.card.flash{animation:flash 1.2s ease-out}
+.agentfold{margin-bottom:14px}.agentfold>summary{cursor:pointer;font-size:13px;color:var(--text2);padding:4px 2px}.agentfold[open]>summary{margin-bottom:8px}
 .savebar{position:sticky;bottom:16px;margin-top:20px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);box-shadow:0 8px 24px rgba(20,16,10,.1),0 0 0 1px var(--line);border-radius:12px;padding:10px 10px 10px 16px}
 .savebar span{color:var(--text3);font-size:13px}.savebar.dirty span{color:var(--warn);font-weight:600}
 .tools{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px}
@@ -981,11 +992,29 @@ function agentCard(a){const ta=el('textarea',{value:a.text,rows:18});const ed=el
 const fillTask=uns=>claudeTask('설정해 줘',`빈칸(${uns.map(a=>a.name).join(', ')})을 그 세션의 노션·Exa 커넥터 이름으로 채웁니다. 커넥터가 없으면 claude.ai → 설정 → 커넥터에서 먼저 연결하라고 안내합니다.`);
 // 처음 설정의 담당 단계: 맨 위에 그 담당 카드(빈칸이면 채우는 방법도)
 const withAgent=(n,kids)=>{const a=S.agents.find(x=>x.name===n);if(!a)return kids;
- return [...(a.unset?[fillTask([a]),el('div',{style:'height:14px'})]:[]),agentCard(a),el('div',{style:'height:14px'}),...kids]};
+ return [...(a.unset?[fillTask([a]),el('div',{style:'height:14px'})]:[]),
+  el('details',{className:'agentfold'},el('summary',{},`담당 정보 보기 · ${a.name} (모델·도구·파일 편집)`),agentCard(a)),...kids]};
+// 처음 설정 단계마다 맨 위의 '지금 할 일': [할 일, 끝났나, 그 일을 하는 카드의 제목(일부)]. 지금 할 것 하나만 눈에 띄게
+const TODOS={
+ 'Claude Code 로그인':()=>[['Claude Code에 로그인되어 있는지 확인',!!(S.checks.claude&&S.checks.claude.ok),'Claude Code']],
+ '기본 점검':()=>[['아래 점검 결과에 ❌가 없는지 확인',!!(S.checks.기본&&S.checks.기본.ok),'모든 담당이 함께 쓰는 것']],
+ '논문 찾기':()=>[['검색 키워드를 넣고 저장',S.scout.키워드.length>0,'paper-scout 설정'],['시험 실행을 눌러 통과 확인',testOk('paper-scout',S.scout),'paper-scout 시험']],
+ '조테로 저장':()=>[['조테로를 쓸지 정하기 (안 쓰면 그대로 다음 단계)',true,'zotero-keeper 설정'],...(S.zotero.사용?[['시험 실행을 눌러 통과 확인',testOk('zotero-keeper',S.zotero),'zotero-keeper 시험']]:[])],
+ '요약':()=>[['요약을 쓸지 정하기 (안 쓰면 그대로 다음 단계)',true,'paper-reader 설정'],...(S.reader.사용?[['시험 실행을 눌러 통과 확인',testOk('paper-reader',S.reader),'paper-reader 시험']]:[])],
+ '넣으면 안 되는 자료':()=>[['넣으면 안 되는 자료를 적고 저장',infoFilled(),'넣으면 안 되는 자료'],['시험 실행을 눌러 통과 확인',testOk('privacy-guard',{}),'privacy-guard 시험']],
+ '노션 올리기':()=>[['노션 페이지 주소를 넣고 "새로 시작"',!!S.notion.notion_db_url,'새로 시작'],['시험 실행을 눌러 통과 확인',testOk('notion-publisher',S.notion),'notion-publisher 시험']],
+ '마무리 점검':()=>[['아래 확인 결과에 ❌가 없는지 확인',!!(S.checks.에이전트&&S.checks.에이전트.ok),'모든 설정']]};
+function todoCard(k,nx){const items=(TODOS[k]||(()=>[]))(),cur=items.findIndex(x=>!x[1]);
+ const jump=h=>{const c=[...$('#main').querySelectorAll('section.card')].find(c=>((c.querySelector('h2')||{}).textContent||'').includes(h));
+  if(c){c.scrollIntoView({behavior:'smooth',block:'start'});c.classList.remove('flash');void c.offsetWidth;c.classList.add('flash')}};
+ return el('section',{className:'todo'},el('div',{className:'todo-h'},'지금 할 일'),
+  el('ol',{},...items.map(([t,d],j)=>el('li',{className:d?'dn':j===cur?'cur':''},el('span',{className:'tnum'},d?'✓':String(j+1)),t))),
+  cur<0?el('button',{className:'btn primary',onclick:()=>{if(nx==='현황')SETUP_OPEN=false;go(nx)}},`다 했습니다 · 다음: ${nx} →`)
+   :el('button',{className:'btn primary',onclick:()=>jump(items[cur][2])},`${items[cur][0]} ↓`))}
 // 담당 시험 카드: 대시보드가 이 컴퓨터의 Claude Code를 작업공간에서 띄워 그 담당에게 '시험'을 맡긴다.
 // 담당 파일의 tools만 허용하고, 진행(도구 호출)과 담당의 보고, 담당이 쓴 결과.json을 보여 준다
 const TESTPOLL={};
-function testCard(name,fresh){const box=el('div'),btn=el('button',{className:'btn',type:'button'},'시험 실행');let was=false;
+function testCard(name,fresh){const box=el('div'),btn=el('button',{className:'btn primary',type:'button'},'▶ 시험 실행');let was=false;
  const row=x=>el('div',{className:'li'},el('span',{className:'ico '+(x.통과?'ok':x.필수===false?'warn':'bad')},x.통과?'✓':'!'),
   el('div',{className:'grow'},el('div',{className:'t'},x.이름+(x.필수===false?' (선택)':'')),x.설명?el('div',{className:'m'},x.설명):null));
  const show=r=>{const res=r.result;btn.disabled=r.running;
@@ -1004,8 +1033,10 @@ function testCard(name,fresh){const box=el('div'),btn=el('button',{className:'bt
  const poll=async()=>{if(box.isConnected||!was)show(await fetch('/api/agent/test?name='+encodeURIComponent(name)).then(r=>r.json()))};
  btn.onclick=async()=>{btn.disabled=true;const r=await post('/api/agent/test',{name});if(!r.ok){toast(r.msg);btn.disabled=false;return}was=true;poll()};
  queueMicrotask(poll);
- return card(`${name} 시험`,`이 컴퓨터의 Claude Code로 ${name}를 불러 실제로 해 봅니다. ${TEST_NOTE[name]||''} 기록은 매일논문/시험/${name}/에 남고 그날 논문에는 섞이지 않습니다.`,
-  box,el('div',{className:'row-actions',style:'margin-top:14px'},btn))}
+ const c=card(`${name} 시험`,`이 컴퓨터의 Claude Code로 ${name}를 불러 실제로 해 봅니다. ${TEST_NOTE[name]||''} 기록은 매일논문/시험/${name}/에 남고 그날 논문에는 섞이지 않습니다.`,
+  el('div',{className:'row-actions',style:'margin-bottom:4px'},btn),box);
+ if(!(S.tests[name]&&S.tests[name].통과&&fresh))c.classList.add('focus');  // 아직 통과 못 한 시험은 테두리로 눈에 띄게
+ return c}
 // 파일 메뉴: 위치·설명 목록과 편집기. 담당·스킬·규칙 글(.md)만 고칠 수 있고, 저장 전 원래 내용은 매일논문/파일백업/에 남는다
 let FILESEL=null;
 function filesPage(){const list=el('div',{className:'list'}),ed=el('div',{className:'fedit'});
@@ -1279,10 +1310,11 @@ function render(){
   head=el('div',{className:'head'},el('div',{},el('div',{className:'kick'},`처음 설정 · ${s.agent?AGENT_GROUP+' · '+s.agent+(s.optional?' (선택)':'')+' · ':''}${i+1}/${STEPS.length}단계`),el('h1',{},s.k),el('p',{},s.d)),s.done()&&!lk?badge('ok','끝'):'');
   body=lk?[el('div',{className:'card lockcard'},el('div',{className:'lockico'},'🔒'),el('h2',{},`먼저 '${lk}' 단계를 끝내야 합니다`),
     el('p',{className:'desc'},'앞 단계가 끝나면 이 단계가 열립니다.'),el('div',{className:'row-actions',style:'justify-content:center;margin-top:14px'},el('button',{className:'btn',onclick:()=>go(lk)},`${lk} 단계로 가기`)))]:p.r();
+  if(!lk)body.unshift(todoCard(s.k,nx));
   const fd=!lk&&!s.done()&&i>0?s.fail():'';if(fd)body.push(helpCard(s.k,fd));  // 1단계(로그인)는 Claude에게 물을 수 없으니 고정 안내만
   body.push(el('div',{className:'stepnav'},i>0?el('button',{className:'btn ghost',onclick:()=>go(STEPS[i-1].k)},'← '+STEPS[i-1].k):el('span'),
    el('div',{className:'nxwrap'},s.done()||lk?'':el('span',{className:'nxhint'},'이 단계를 끝내면 다음 단계가 열립니다'),
-    el('button',{className:'btn',disabled:!s.done()||!!lk,onclick:()=>{if(i===STEPS.length-1)SETUP_OPEN=false;go(nx)}},i<STEPS.length-1?`다음: ${nx} →`:'매일 쓰기 시작: 현황 →'))))}
+    el('button',{className:s.done()&&!lk?'btn primary':'btn',disabled:!s.done()||!!lk,onclick:()=>{if(i===STEPS.length-1)SETUP_OPEN=false;go(nx)}},i<STEPS.length-1?`다음: ${nx} →`:'매일 쓰기 시작: 현황 →'))))}
  else{head=el('div',{className:'head'},el('div',{},el('h1',{},p.t),el('p',{},p.d)));
   body=todo&&!ALWAYS_OPEN.includes(cur)?[el('div',{className:'card lockcard'},el('div',{className:'lockico'},'🔒'),el('h2',{},'처음 설정을 먼저 끝내세요'),
     el('p',{className:'desc'},`${doneN}/${STEPS.length}단계를 마쳤습니다. 모두 마치면 매일 쓰기 메뉴가 열립니다.`),
