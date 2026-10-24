@@ -6,7 +6,7 @@
 고칠 수 있는 파일은 설정/(매일논문.json, 담당 설정, 연구자_정보.md)과 .claude/agents/*.md 뿐이고, 작업공간(.git 없는 폴더)에서만 저장한다.
 담당 시험·새로 시작·매일 실행은 이 컴퓨터의 Claude Code(claude -p)로 담당을 부른다. 조테로 탐색은 읽기만 한다.
 """
-import datetime, importlib.util, json, os, pathlib, plistlib, re, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request, webbrowser
+import datetime, importlib.util, json, os, pathlib, plistlib, re, shutil, subprocess, sys, tempfile, threading, time, urllib.parse, urllib.request, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -303,6 +303,28 @@ def run_status():
     steps, report, err, called = read_stream(RUN["log"])
     return {"running": bool(p and p.poll() is None), "code": p.poll() if p else None, "steps": steps[-40:], "report": report,
             "error": err, "agents": called, "secs": round(time.time() - RUN["started"]) if RUN["started"] else 0}
+
+
+def make_workspace():
+    """원본 저장소 안에 작업공간 workspace/를 만든다(시작하기.md 2단계의 rsync와 같은 것을 뺀다). 이미 있으면 그대로 쓴다."""
+    ws = ROOT / "workspace"
+    if not (ROOT / ".git").exists():
+        return False, "이미 작업공간에서 열려 있습니다"
+    if not (ws / "scripts" / "대시보드.py").exists():
+        if ws.exists():
+            return False, f"{ws} 폴더가 있지만 작업공간이 아닙니다. 확인한 뒤 옮기거나 지우고 다시 누르세요"
+        def skip(d, names):
+            d = pathlib.Path(d)
+            return [n for n in names if n in (".git", ".idea", "__pycache__", ".DS_Store", "매일논문")
+                    or (d == ROOT and n == "workspace") or (d == ROOT / ".claude" and n == "worktrees")]
+        shutil.copytree(ROOT, ws, ignore=skip, symlinks=True)
+    return True, str(ws)
+
+
+def reopen_in(ws, port):
+    """대시보드를 작업공간 쪽 대시보드로 바꿔 띄운다(같은 포트, 새 창은 열지 않음). 응답을 보낸 뒤 부른다."""
+    os.environ["DASH_REOPEN"] = "1"
+    os.execv(sys.executable, [sys.executable, str(ws / "scripts" / "대시보드.py"), str(port)])
 
 
 def schedule_get():
@@ -646,6 +668,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200 if ok else 400, {"ok": ok, "msg": msg})
         if self.path == "/api/check":
             return self.reply(200, run_check(body.get("mode") if body.get("mode") in SECTION_MODES else "에이전트"))
+        if self.path == "/api/workspace":
+            ok, msg = make_workspace()
+            self.reply(200 if ok else 400, {"ok": ok, "msg": msg})
+            if ok:
+                threading.Timer(0.5, reopen_in, (pathlib.Path(msg), self.server.server_address[1])).start()
+            return
         self.reply(404, {"error": "없음"})
 
     def log_message(self, *a):
@@ -929,6 +957,20 @@ function checkCard(mode,title,auto){const box=el('div'),btn=el('button',{classNa
 const waitBox=t=>el('div',{className:'result wait'},el('span',{className:'spin'}),el('div',{},t));
 const badBox=t=>el('div',{className:'result bad'},el('span',{},'!'),el('div',{},t));
 
+// 원본 저장소에서 열렸을 때: 누르면 workspace/를 만들고(이 클릭이 승인) 대시보드가 그쪽으로 다시 뜬다
+function wsCard(){const box=el('div'),btn=el('button',{className:'btn',type:'button'},'작업공간 만들기');
+ btn.onclick=async()=>{btn.disabled=true;box.replaceChildren(waitBox('작업공간을 만드는 중…'));
+  const r=await post('/api/workspace',{}).catch(()=>({ok:false,msg:'대시보드에 연결하지 못했습니다'}));
+  if(!r.ok){btn.disabled=false;return box.replaceChildren(badBox(r.msg))}
+  box.replaceChildren(waitBox(`만들었습니다 · ${r.msg} 쪽으로 대시보드를 다시 여는 중…`));
+  for(let i=0;i<40;i++){await new Promise(f=>setTimeout(f,500));
+   const s=await fetch('/api/state').then(x=>x.json()).catch(()=>null);if(s&&!s.readonly)return location.reload()}
+  box.replaceChildren(badBox('다시 열리지 않았습니다. 터미널에서 run.sh(Windows는 run.bat)를 다시 실행하세요.'))};
+ return card('작업공간 만들기',`지금은 원본 저장소(${S.root})에서 열려 있어 설정을 저장할 수 없습니다.`,
+  el('div',{className:'mini'},el('p',{},'누르면 이 저장소 안에 workspace/ 폴더를 만들고 파일을 복사합니다(.git과 매일논문 결과는 빼고). 키워드·노션 주소 같은 내 설정은 그 폴더에만 저장되고, .gitignore에 들어 있어 git에 올라가지 않습니다.'),
+   el('p',{},'만든 뒤에는 대시보드가 작업공간 쪽으로 저절로 다시 열립니다. 다음부터는 run.sh(Windows는 run.bat)가 작업공간을 바로 엽니다.')),
+  box,el('div',{className:'row-actions',style:'margin-top:14px'},btn))}
+
 // 담당 에이전트 카드(이름·모델·도구·커넥터 상태, 파일 편집)
 function agentCard(a){const ta=el('textarea',{value:a.text,rows:18});const ed=el('div',{hidden:true},ta,
   el('div',{className:'row-actions',style:'margin-top:10px'},el('button',{className:'btn',onclick:()=>save('agent',ta.value,a.name)},'저장'),el('button',{className:'btn ghost',onclick:()=>{ta.value=a.text;ed.hidden=true}},'취소')));
@@ -993,7 +1035,7 @@ const PAGES={
     el('div',{className:'li'},el('span',{className:'ico '+(d.ok?'ok':'bad')},d.ok?'✓':'!'),el('div',{className:'grow'},el('div',{className:'t'},d.ok?'로그인됨':'로그인 안 됨'),el('div',{className:'m'},d.ok?(d.account||''):'claude auth login으로 로그인합니다')))),
    d.ok?'':guide({diag:d},async()=>{await post('/api/claude',{});await load()}),
    el('div',{className:'row-actions',style:'margin-top:14px'},again))]}},
- '기본 점검':{r(){return [checkCard('기본','모든 담당이 함께 쓰는 것',false),
+ '기본 점검':{r(){return [S.readonly?wsCard():'',checkCard('기본','모든 담당이 함께 쓰는 것',false),
   el('div',{className:'mini',style:'margin-top:14px'},el('p',{},'노션·Exa 커넥터는 이 화면에서 확인할 수 없습니다. claude.ai → 설정 → 커넥터에서 연결하고, 그 커넥터를 쓰는 담당 단계(논문 찾기·노션 올리기)에서 이어서 확인합니다.'))]}},
  '조테로 저장':{r(){const z=S.zotero,on=el('input',{type:'checkbox',id:'zon',checked:z.사용,onchange:mark,style:'width:auto;margin:0;flex:none'});
   return withAgent('zotero-keeper',[card('zotero-keeper 설정','설정/zotero-keeper.json · 이 컴퓨터의 조테로 7 앱에만 저장합니다(밖으로 나가는 것 없음).',
@@ -1245,7 +1287,7 @@ function render(){
   body=todo&&!ALWAYS_OPEN.includes(cur)?[el('div',{className:'card lockcard'},el('div',{className:'lockico'},'🔒'),el('h2',{},'처음 설정을 먼저 끝내세요'),
     el('p',{className:'desc'},`${doneN}/${STEPS.length}단계를 마쳤습니다. 모두 마치면 매일 쓰기 메뉴가 열립니다.`),
     el('div',{className:'row-actions',style:'justify-content:center;margin-top:14px'},el('button',{className:'btn',onclick:()=>go(todo)},`다음 단계: ${todo}`)))]:p.r()}
- $('#main').replaceChildren(S.readonly?el('div',{className:'banner'},'원본 저장소에서 열렸습니다. 보기만 되고 저장은 되지 않습니다 — workspace/ 폴더에서 여세요.'):'',head,...body)}
+ $('#main').replaceChildren(S.readonly?el('div',{className:'banner'},'원본 저장소에서 열렸습니다. 보기만 되고 저장은 되지 않습니다 — 처음 설정 → 기본 점검에서 "작업공간 만들기"를 누르세요.'):'',head,...body)}
 async function load(){S=await fetch('/api/state').then(r=>r.json());if(cur===null)cur=nextTodo()||'현황';render()}
 addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
 load();
@@ -1301,5 +1343,6 @@ if __name__ == "__main__":
         port = int(sys.argv[1]) if len(sys.argv) > 1 else 9008
         url = f"http://127.0.0.1:{port}"
         print(f"대시보드: {url}  (끄기: Ctrl+C)")
-        webbrowser.open(url)
+        if not os.environ.pop("DASH_REOPEN", None):  # 작업공간으로 바꿔 띄울 때는 열려 있던 창이 다시 읽는다
+            webbrowser.open(url)
         ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

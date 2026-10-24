@@ -58,7 +58,7 @@ def 기본():
           "터미널에서 claude auth login. 설치가 안 됐으면 brew install --cask claude-code" if exe else
           "Claude Code를 설치하세요: brew install --cask claude-code (또는 npm install -g @anthropic-ai/claude-code)")
     if not INSTALL:
-        check("작업공간 폴더", not (ROOT / ".git").exists(), "원본 저장소입니다. workspace 폴더에서 세션(또는 대시보드)을 여세요.", setup=True)
+        check("작업공간 폴더", not (ROOT / ".git").exists(), "원본 저장소입니다. 대시보드 기본 점검의 '작업공간 만들기'를 누르거나, workspace 폴더에서 세션(또는 대시보드)을 여세요.", setup=True)
     if AGENT:
         settings = (ROOT / ".claude/settings.json").read_text() if (ROOT / ".claude/settings.json").exists() else ""
         check("판정 루프 훅 등록", "매일논문_루프.py" in settings and (ROOT / "scripts/매일논문_판정.py").exists(),
