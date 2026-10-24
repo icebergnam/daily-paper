@@ -1,0 +1,2 @@
+# Windows 배치 파일은 CRLF로 받아야 cmd가 제대로 읽는다
+*.bat text eol=crlf
