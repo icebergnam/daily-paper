@@ -1203,7 +1203,7 @@ function runCard(){const c=S.config,t=S.days.find(d=>d.day===S.today),got=t?t.pa
   el('div',{className:'mini'},el('p',{},'예약 실행은 오늘 설정 편수를 이미 채웠으면 건너뛰고, 모자라면 그만큼만 받습니다.'),
    el('p',{},`이 버튼은 언제든 ${c.찾을_편수}편을 더 받습니다. 이 컴퓨터의 Claude Code가 스킬 daily-paper 순서대로 담당에게 맡깁니다(찾기 → 조테로 → 요약 → 판정 → 점검 → 노션). 5~15분 걸리고, 노션에는 새로 받은 논문만 올립니다.`)),
   el('div',{className:'row-actions',style:'align-items:center'},btn,todo?el('span',{className:'nxhint'},`처음 설정을 끝내면 누를 수 있습니다(다음: ${todo})`):''),box)}
-function showRun(box,btn,r){btn.disabled=r.running||!!nextTodo();const last=(r.steps||[]).slice(-1)[0]||'',bad=!r.running&&(r.code||/실패|미업로드|중단/.test(r.report||''));
+function showRun(box,btn,r){btn.disabled=r.running||!!nextTodo();const last=(r.steps||[]).slice(-1)[0]||'',bad=!r.running&&(r.code||/실패(?!\s*0\s*개)|미업로드|중단/.test(r.report||''));
  box.replaceChildren(r.running?el('div',{className:'result wait'},el('span',{className:'spin'}),el('div',{},`실행 중 · ${Math.floor(r.secs/60)}분 ${r.secs%60}초`,el('div',{className:'sub'},last))):
    el('div',{className:'result '+(bad?'bad':'ok')},el('span',{},bad?'!':'✓'),el('div',{},bad?'끝났지만 확인이 필요합니다':'끝났습니다',el('div',{className:'sub'},(r.agents||[]).length?'부른 담당: '+[...new Set(r.agents)].join(' → '):''))),
   r.report?el('div',{className:'answer'},el('div',{className:'ah'},'Claude의 보고'),el('div',{className:'ab'},...mdLite(r.report))):'',
