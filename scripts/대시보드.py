@@ -389,12 +389,13 @@ def read_stream(f):
         except ValueError:
             other.append(line)
             continue
-        for c in (e.get("message") or {}).get("content") or []:
+        m = e.get("message") if isinstance(e, dict) else None
+        for c in (m.get("content") if isinstance(m, dict) else None) or []:  # message가 글자인 줄(시스템 알림 등)도 있다
             if isinstance(c, dict) and c.get("type") == "tool_use":
                 steps.append(tool_step(c))
                 if c.get("name") in ("Task", "Agent"):
                     called.append((c.get("input") or {}).get("subagent_type") or "")
-        if e.get("type") == "result":
+        if isinstance(e, dict) and e.get("type") == "result":
             report = e.get("result") or ""
     return steps, report, "\n".join(other)[-1500:], called
 
@@ -1748,6 +1749,10 @@ def selftest():
     assert agent_tools("paper-scout")[:2] == ["Read", "Glob"] and any(x.startswith("Bash(") and x.endswith(")") for x in agent_tools("paper-scout"))
     assert tool_step({"name": "mcp__claude_ai_Exa__web_search_exa", "input": {"query": "q"}}) == "web_search_exa q"
     assert tool_step({"name": "Bash", "input": {"command": "ls"}}) == "Bash ls"
+    with tempfile.TemporaryDirectory() as t:  # message가 글자이거나 줄이 객체가 아니어도 멈추지 않는다
+        f = pathlib.Path(t) / "s.jsonl"
+        f.write_text('{"message": "알림"}\n[1]\n{"type": "result", "result": "끝"}\n')
+        assert read_stream(f)[1] == "끝"
     assert check_zotero(ZOTERO_DEFAULT) == "" and check_zotero({"사용": 1, "컬렉션": "a"}) and check_zotero({"사용": False, "컬렉션": " "})
     assert check_config({"키워드": ["a"], "찾을_편수": True, "요약할_편수": 1})
     assert not schedule_set("25:00")[0] and not schedule_set("8:00")[0]  # 형식이 틀리면 launchd를 건드리지 않는다
