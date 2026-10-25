@@ -836,6 +836,7 @@ class Handler(BaseHTTPRequestHandler):
 
 PAGE = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>매일 논문 관리</title>
+<script>try{const t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <style>
 :root{
  --bg:#fafafa;--side:#f4f4f5;--surface:#fff;--surface2:#f4f4f6;--line:#e9e9ee;--line2:#d9d9e0;
@@ -845,12 +846,19 @@ PAGE = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
  --r:12px;--shadow:0 1px 2px rgba(16,24,40,.04),0 0 0 1px var(--line);--lift:0 4px 16px rgba(16,24,40,.08),0 0 0 1px var(--line);
  --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Segoe UI",sans-serif;
  --mono:ui-monospace,"SF Mono",Menlo,monospace}
-@media (prefers-color-scheme:dark){:root{
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
  --bg:#0e0e10;--side:#131316;--surface:#17171a;--surface2:#1f1f23;--line:#27272c;--line2:#36363d;
  --text:#ededef;--text2:#a1a1aa;--text3:#71717a;
  --accent:#818cf8;--accent-2:#a78bfa;--accent-bg:#1f1d3d;--on-accent:#0e0e10;
  --ok:#4ade80;--ok-bg:#0f2a1a;--warn:#fbbf24;--warn-bg:#2a2010;--bad:#f87171;--bad-bg:#2d1414;
  --shadow:0 0 0 1px var(--line);--lift:0 8px 24px rgba(0,0,0,.4),0 0 0 1px var(--line2)}}
+:root[data-theme=dark]{
+ --bg:#0e0e10;--side:#131316;--surface:#17171a;--surface2:#1f1f23;--line:#27272c;--line2:#36363d;
+ --text:#ededef;--text2:#a1a1aa;--text3:#71717a;
+ --accent:#818cf8;--accent-2:#a78bfa;--accent-bg:#1f1d3d;--on-accent:#0e0e10;
+ --ok:#4ade80;--ok-bg:#0f2a1a;--warn:#fbbf24;--warn-bg:#2a2010;--bad:#f87171;--bad-bg:#2d1414;
+ --shadow:0 0 0 1px var(--line);--lift:0 8px 24px rgba(0,0,0,.4),0 0 0 1px var(--line2)}
+:root{color-scheme:light dark}:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
 *{box-sizing:border-box}[hidden]{display:none!important}
 html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 ::selection{background:var(--accent-bg)}
@@ -890,6 +898,9 @@ nav svg{width:16px;height:16px;flex:none;color:var(--text3)}
 .side-foot{margin-top:auto;padding:0 8px;font-size:12px;color:var(--text3)}
 .side-foot a{display:inline-flex;gap:6px;align-items:center;color:var(--text2);text-decoration:none;font-weight:500}
 .side-foot a:hover{color:var(--text)}
+.theme-seg{display:flex;gap:2px;padding:2px;margin-bottom:8px;border-radius:8px;background:var(--surface2);box-shadow:0 0 0 1px var(--line)}
+.theme-seg button{flex:1;border:0;background:none;color:var(--text2);font:inherit;font-size:12px;padding:4px 0;border-radius:6px;cursor:pointer}
+.theme-seg button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 main{padding:40px 48px 120px;max-width:1120px;width:100%;margin:0 auto}
 .head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:28px;flex-wrap:wrap}
 .head h1{margin:0;font-size:28px;font-weight:700;letter-spacing:-.03em;line-height:1.25}
@@ -1710,6 +1721,10 @@ function scheduleCard(){const at=el('input',{type:'time',value:S.schedule||'08:0
    S.schedule?el('button',{className:'btn ghost',onclick:set('')},'예약 끄기'):'',todo?el('span',{className:'nxhint'},'처음 설정을 끝내면 켤 수 있습니다'):''),
   el('div',{className:'help'},'그 시각에 Mac이 켜져 있고 로그인돼 있어야 합니다. 기록은 workspace/매일논문/예약실행.log와 실행 기록 화면에 남습니다.'))}
 
+// 화면 모드: 자동(시스템 설정을 따름)·라이트·다크. 이 브라우저에만 기억한다
+const themeSeg=()=>{const cur=lsGet('theme','auto');return el('div',{className:'theme-seg',role:'group',ariaLabel:'화면 모드'},
+ ...[['auto','자동'],['light','라이트'],['dark','다크']].map(([v,l])=>el('button',{type:'button',ariaPressed:String(cur===v),onclick:()=>{
+  lsSet('theme',v);if(v==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=v;render()}},l)))};
 function go(t){if(dirty&&t!==cur&&!confirm('저장하지 않은 변경이 있습니다. 떠날까요?'))return;dirty=false;cur=t;render();scrollTo(0,0)}
 let SETUP_OPEN=null;  // 처음 설정 묶음: 다 끝나면 접고, 눌러서 다시 펼 수 있다
 function render(){
@@ -1724,7 +1739,7 @@ function render(){
   el('div',{className:'navh'},'매일 쓰기'),...DAILY.map(daily),
   el('div',{className:'navh'},'번외'),...EXTRA.map(daily));
  document.querySelector('.brand small').textContent=`The Daily Paper 관리 · v${S.version}`;
- $('#foot').replaceChildren(el('span',{},S.schedule?`매일 ${S.schedule} 예약`:'예약 꺼짐'));
+ $('#foot').replaceChildren(themeSeg(),el('span',{},S.schedule?`매일 ${S.schedule} 예약`:'예약 꺼짐'));
  const i=stepIdx(cur),p=PAGES[cur],lk=lockedBy(cur);let head,body;
  if(i>=0){const s=STEPS[i],nx=i<STEPS.length-1?STEPS[i+1].k:'현황';
   head=el('div',{className:'head'},el('div',{},el('div',{className:'kick'},`처음 설정 · ${s.agent?AGENT_GROUP+' · '+s.agent+(s.optional?' (선택)':'')+' · ':''}${i+1}/${STEPS.length}단계`),el('h1',{},s.k),el('p',{},s.d)),s.done()&&!lk?badge('ok','끝'):'');
