@@ -1,16 +1,16 @@
-"""paper-scout: 설정/paper-scout.json의 키워드로 OpenAlex에서 최근 논문 후보를 찾는다. 키 필요 없음.
+"""paper-scout: workspace/설정/paper-scout.json의 키워드로 OpenAlex에서 최근 논문 후보를 찾는다. 키 필요 없음.
 
 사용: python3 .claude/skills/paper-scout/scripts/openalex.py {출력 폴더} [쪽]
   → {출력 폴더}/후보_openalex.json. 오픈 액세스 논문만, 키워드마다 '키워드당_후보'편씩 한 쪽을 받는다.
   쪽(기본 1)이 2 이상이면 그 쪽을 받아 기존 파일 뒤에 붙인다(PDF 있는 후보가 모자랄 때 다음 쪽을 더 본다).
-  이미 본 논문(매일논문/seen.txt)과 이미 파일에 있는 논문은 뺀다. 끝에 키워드별 편수(PDF 주소 있는 편수)와 이번 쪽 위쪽 제목 5개를 찍는다.
+  이미 본 논문(workspace/매일논문/seen.txt)과 이미 파일에 있는 논문은 뺀다. 끝에 키워드별 편수(PDF 주소 있는 편수)와 이번 쪽 위쪽 제목 5개를 찍는다.
 OpenAlex 초록은 낱말 위치 사전(abstract_inverted_index)으로 오므로 여기서 문장으로 되돌린다(이 스크립트가 있는 이유).
 """
 import datetime, json, pathlib, re, sys, urllib.parse, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-CFG = ROOT / "설정/paper-scout.json"
-SEEN = ROOT / "매일논문/seen.txt"
+CFG = ROOT / "workspace/설정/paper-scout.json"
+SEEN = ROOT / "workspace/매일논문/seen.txt"
 
 
 def cfg():
@@ -63,7 +63,7 @@ def search(keyword, n, days=None, page=1, oa=False):
 def main(out, page=1):
     c = cfg()
     if not c.get("키워드"):
-        sys.exit("키워드가 비어 있습니다: 설정/paper-scout.json")
+        sys.exit("키워드가 비어 있습니다: workspace/설정/paper-scout.json")
     f = out / "후보_openalex.json"
     old = json.loads(f.read_text()) if page > 1 and f.exists() else []
     skip = (set(SEEN.read_text().split()) if SEEN.exists() else set()) | {k for p in old for k in keys(p)}

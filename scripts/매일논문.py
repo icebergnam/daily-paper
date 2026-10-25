@@ -9,15 +9,15 @@
   '추가'를 붙이면(저장 추가) 언제든 설정 편수만큼 더 받는다.
 새로 받은 ID는 "새 논문: D03 D04" 줄에 찍힌다. 이어 붙이면 노션완료.txt·판정상태.json을 지워 그날을 다시 열어 둔다.
 PDF는 OpenAlex 오픈 액세스 → Semantic Scholar 오픈 액세스 순으로 받는다. 못 받은 논문 ID는 마지막 줄에 찍힌다.
-조테로 저장은 이어서 zotero-keeper가 한다(zotero_saved는 처음엔 false, 설정/zotero-keeper.json "사용"이 false면 이유가 "사용 안 함").
+조테로 저장은 이어서 zotero-keeper가 한다(zotero_saved는 처음엔 false, workspace/설정/zotero-keeper.json "사용"이 false면 이유가 "사용 안 함").
 """
 import datetime, importlib.util, json, pathlib, re, sys, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "매일논문"
+OUT = ROOT / "workspace/매일논문"  # 내 결과는 작업공간에만(git에 안 올라감)
 SEEN = OUT / "seen.txt"
-CFG = ROOT / "설정/매일논문.json"
-# OpenAlex 검색과 중복 판단은 paper-scout 스킬의 것을 쓴다(키워드·기간은 설정/paper-scout.json)
+CFG = ROOT / "workspace/설정/매일논문.json"
+# OpenAlex 검색과 중복 판단은 paper-scout 스킬의 것을 쓴다(키워드·기간은 workspace/설정/paper-scout.json)
 _spec = importlib.util.spec_from_file_location("openalex", ROOT / ".claude/skills/paper-scout/scripts/openalex.py")
 scout = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(scout)
@@ -75,7 +75,7 @@ def write_bib(day, p):
 
 
 def cmd_test_prep():
-    """paper-reader 시험 준비: paper-scout 시험 후보(거른 것 빼고) 중 PDF를 받은 첫 편을 매일논문/시험/paper-reader/D01로 둔다.
+    """paper-reader 시험 준비: paper-scout 시험 후보(거른 것 빼고) 중 PDF를 받은 첫 편을 workspace/매일논문/시험/paper-reader/D01로 둔다.
     PDF를 받은 후보가 없으면 첫 후보의 초록만 둔다(그러면 판정 J7이 실패로 알린다). 그날 논문·seen.txt는 건드리지 않는다."""
     src, out = OUT / "시험/paper-scout", OUT / "시험/paper-reader"
     drop = {x.get("openalex") for x in json.loads((src / "제외.json").read_text())} - {None, ""} if (src / "제외.json").exists() else set()
@@ -143,7 +143,7 @@ def cmd_save(day, seen, n, m, old):
         print("새 논문이 없습니다(오늘 후보를 다 봤습니다)")
         return
     batch = max((p.get("batch", 1) for p in old), default=0) + 1
-    zf = ROOT / "설정/zotero-keeper.json"
+    zf = ROOT / "workspace/설정/zotero-keeper.json"
     zotero_on = json.loads(zf.read_text()).get("사용", True) if zf.exists() else True
     for i, p in enumerate(picked, len(old) + 1):
         p["id"] = f"D{i:02d}"
@@ -169,16 +169,16 @@ def cmd_save(day, seen, n, m, old):
 
 
 def main():
-    if (ROOT / ".git").exists():  # 공개 저장소에 개인 결과를 만들지 않는다
-        sys.exit("원본 저장소에서는 실행하지 않습니다. workspace 폴더에서 실행하세요.")
+    if not (ROOT / "workspace/설정").is_dir():  # 개인 설정·결과는 작업공간에만 둔다
+        sys.exit("작업공간(workspace/)이 없습니다. 대시보드 → 기본 점검에서 '작업공간 만들기'를 누르세요.")
     cfg = json.loads(CFG.read_text())
     if not scout.cfg()["키워드"]:
-        print("키워드가 비어 있습니다. 설정/paper-scout.json에 키워드를 적어 주세요.")
+        print("키워드가 비어 있습니다. workspace/설정/paper-scout.json에 키워드를 적어 주세요.")
         return
     today = datetime.date.today().isoformat()
     day = OUT / today
     old = json.loads((day / "목록.json").read_text()) if (day / "목록.json").exists() else []
-    rf = ROOT / "설정/paper-reader.json"  # 요약은 paper-reader(선택) 설정: 사용 안 함이면 요약 0편(PDF는 그대로 받는다)
+    rf = ROOT / "workspace/설정/paper-reader.json"  # 요약은 paper-reader(선택) 설정: 사용 안 함이면 요약 0편(PDF는 그대로 받는다)
     r = json.loads(rf.read_text()) if rf.exists() else {"사용": True, "요약할_편수": 2}
     n, m = cfg["찾을_편수"], r["요약할_편수"] if r.get("사용", True) else 0
     if "추가" not in sys.argv[1:]:  # 자동: 설정 편수를 채웠으면 건너뛰고, 모자라면 그만큼만

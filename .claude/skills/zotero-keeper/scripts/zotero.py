@@ -5,13 +5,13 @@
       python3 .claude/skills/zotero-keeper/scripts/zotero.py 저장 {날짜 폴더} [ID ...]
         {날짜 폴더}/목록.json에서 아직 저장 안 된 논문(ID를 주면 그것만)을 저장하고 zotero_saved·zotero_error를 고쳐 쓴다
       python3 .claude/skills/zotero-keeper/scripts/zotero.py 시험
-        paper-scout 시험 후보(거른 것 빼고) 첫 편을 '시험' 태그를 붙여 저장 → 매일논문/시험/zotero-keeper/시험저장.json
-설정: 설정/zotero-keeper.json("사용", "컬렉션"). 논문 글(제목·초록)을 셸 명령에 넣지 않으려고 저장은 이 스크립트가 한다.
+        paper-scout 시험 후보(거른 것 빼고) 첫 편을 '시험' 태그를 붙여 저장 → workspace/매일논문/시험/zotero-keeper/시험저장.json
+설정: workspace/설정/zotero-keeper.json("사용", "컬렉션"). 논문 글(제목·초록)을 셸 명령에 넣지 않으려고 저장은 이 스크립트가 한다.
 """
 import datetime, json, pathlib, sys, urllib.request, uuid
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-CFG = ROOT / "설정/zotero-keeper.json"
+CFG = ROOT / "workspace/설정/zotero-keeper.json"
 ZOTERO = "http://127.0.0.1:23119/connector/"
 UA = {"User-Agent": "daily-papers/1"}  # 조테로는 브라우저 같은 User-Agent를 막는다
 
@@ -77,7 +77,7 @@ def cmd_check():
 
 def cmd_save(day, ids):
     if not cfg().get("사용", True):
-        print("조테로 사용 안 함(설정/zotero-keeper.json): 저장하지 않습니다")
+        print("조테로 사용 안 함(workspace/설정/zotero-keeper.json): 저장하지 않습니다")
         return 0
     f = day / "목록.json"
     papers = json.loads(f.read_text())
@@ -91,7 +91,7 @@ def cmd_save(day, ids):
 
 
 def cmd_test():
-    src, out = ROOT / "매일논문/시험/paper-scout", ROOT / "매일논문/시험/zotero-keeper"
+    src, out = ROOT / "workspace/매일논문/시험/paper-scout", ROOT / "workspace/매일논문/시험/zotero-keeper"
     drop = {x.get("openalex") for x in json.loads((src / "제외.json").read_text())} if (src / "제외.json").exists() else set()
     pool = [p for n in ("후보_openalex.json", "후보_exa.json") if (src / n).exists()
             for p in json.loads((src / n).read_text()) if not (p.get("openalex") and p.get("openalex") in drop)]

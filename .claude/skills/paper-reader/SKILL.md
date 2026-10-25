@@ -5,12 +5,14 @@ description: 매일 논문의 요약 담당 업무 매뉴얼. 논문 1편을 정
 
 # 요약 (paper-reader)
 
-설정은 `설정/paper-reader.json` 하나다.
+> 내 사본: `workspace/내사본/.claude/skills/paper-reader/` 아래에 같은 이름의 파일(SKILL.md, references/…)이 있으면 이 저장소 파일 대신 그 파일을 읽고 따른다.
+
+설정은 `workspace/설정/paper-reader.json` 하나다.
 
 | 칸 | 뜻 | 기본 |
 |---|---|---|
 | `사용` | 요약할지. `false`면 그날 논문은 요약 없이(초록만) 노션에 올라간다(PDF는 그대로 받는다) | `true` |
-| `요약할_편수` | 하루에 요약할 편수. PDF를 받은 논문만 요약한다. `설정/매일논문.json`의 `찾을_편수` 이하 | `2` |
+| `요약할_편수` | 하루에 요약할 편수. PDF를 받은 논문만 요약한다. `workspace/설정/매일논문.json`의 `찾을_편수` 이하 | `2` |
 
 요약 양식을 바꾸려면 이 파일의 "요약 양식"을 고친다. 판정 기준(`scripts/매일논문_판정.py`)과 어긋나면 판정이 실패하니 같이 본다.
 
@@ -43,14 +45,14 @@ description: 매일 논문의 요약 담당 업무 매뉴얼. 논문 1편을 정
 
 ## 할 일 B · 시험 (메인이 "시험"을 맡길 때)
 
-설정이 실제로 돌아가는지 본다. 대시보드가 paper-scout 시험 후보 중 PDF를 받은 한 편을 `매일논문/시험/paper-reader/`에 `D01`로 미리 둔다(`목록.json`, `D01.txt`, 받았으면 `D01.pdf`). 그날 논문 폴더는 건드리지 않는다.
+설정이 실제로 돌아가는지 본다. 대시보드가 paper-scout 시험 후보 중 PDF를 받은 한 편을 `workspace/매일논문/시험/paper-reader/`에 `D01`로 미리 둔다(`목록.json`, `D01.txt`, 받았으면 `D01.pdf`). 그날 논문 폴더는 건드리지 않는다.
 
-1. `설정/paper-reader.json`의 `사용`이 `false`면 요약하지 않고 `결과.json`에 `"통과": true`, 항목 하나 `{"이름": "사용 안 함", "필수": false, "통과": true, "설명": "요약하지 않습니다"}`만 쓴다.
-2. `매일논문/시험/paper-reader/목록.json`이 없으면 요약하지 않고 실패로 쓴다(제안: "논문 찾기 단계의 시험을 먼저 하세요").
-3. 할 일 A로 `D01`을 `매일논문/시험/paper-reader/`에서 요약한다.
-4. Bash로 `python3 scripts/매일논문_판정.py 요약 매일논문/시험/paper-reader`를 **이 글자 그대로** 실행한다(허용된 명령은 이것 하나다. 다른 명령은 거절되니 하지 않는다).
+1. `workspace/설정/paper-reader.json`의 `사용`이 `false`면 요약하지 않고 `결과.json`에 `"통과": true`, 항목 하나 `{"이름": "사용 안 함", "필수": false, "통과": true, "설명": "요약하지 않습니다"}`만 쓴다.
+2. `workspace/매일논문/시험/paper-reader/목록.json`이 없으면 요약하지 않고 실패로 쓴다(제안: "논문 찾기 단계의 시험을 먼저 하세요").
+3. 할 일 A로 `D01`을 `workspace/매일논문/시험/paper-reader/`에서 요약한다.
+4. Bash로 `python3 scripts/매일논문_판정.py 요약 workspace/매일논문/시험/paper-reader`를 **이 글자 그대로** 실행한다(허용된 명령은 이것 하나다. 다른 명령은 거절되니 하지 않는다).
 5. `FAIL` 줄이 있으면 그 줄대로 `D01.md`를 고치고 4를 다시 한다. 고치기는 2번까지만 한다.
-6. `매일논문/시험/paper-reader/결과.json`을 쓴다.
+6. `workspace/매일논문/시험/paper-reader/결과.json`을 쓴다.
 
 ```json
 {

@@ -6,13 +6,13 @@
                - notion-publisher를 부르려 하면 판정을 돌린다. 실패가 남으면 막고 실패 목록을 돌려준다(고친 뒤 다시 부름).
   Stop       : 다이제스트까지 썼는데 판정 실패가 남았으면 끝내지 못하게 하고 실패 목록을 돌려준다.
 멈춤: 다 통과 / 최대 회차 / 두 번 연속 나아지지 않음 / 판정 장치가 바뀜 → 노션에 올리지 않고 사람에게 넘긴다.
-회차와 결과는 매일논문/{날짜}/판정기록.md에 남는다. 표준 라이브러리만 쓴다.
+회차와 결과는 workspace/매일논문/{날짜}/판정기록.md에 남는다. 표준 라이브러리만 쓴다.
 """
 import datetime, hashlib, json, os, pathlib, subprocess, sys
 
 MAX_ROUNDS = 3  # 회차마다 paper-reader를 다시 부르므로 5주차(5회)보다 적게
 ROOT = pathlib.Path(os.environ.get("CLAUDE_PROJECT_DIR") or pathlib.Path(__file__).resolve().parents[2])
-OUT = ROOT / "매일논문"
+OUT = ROOT / "workspace/매일논문"
 JUDGE = ROOT / "scripts/매일논문_판정.py"
 
 
@@ -95,7 +95,7 @@ def judge_round(day, when):
 
 def main():
     inp = json.load(sys.stdin)
-    if os.environ.get("DAILY_PAPER_TEST"):  # 대시보드의 담당 시험(매일논문/시험/만 씀)은 그날 판정으로 막지 않는다
+    if os.environ.get("DAILY_PAPER_TEST"):  # 대시보드의 담당 시험(workspace/매일논문/시험/만 씀)은 그날 판정으로 막지 않는다
         sys.exit(0)
     day = active_day()
     if not day:

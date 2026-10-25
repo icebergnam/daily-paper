@@ -3,22 +3,25 @@
 사용: python3 scripts/대시보드.py [포트]   (기본 9008, 이 컴퓨터에서만 열림: http://127.0.0.1:9008)
       python3 scripts/대시보드.py 자체시험
       python3 scripts/대시보드.py 매일실행 [추가]   스킬 daily-paper를 한 번 끝까지 돌린다(매일 예약이 부른다)
-고칠 수 있는 파일은 설정/(매일논문.json, 담당 설정, 연구자_정보.md)과 .claude/agents/*.md 뿐이고, 작업공간(.git 없는 폴더)에서만 저장한다.
+코드는 이 저장소, 내 설정·결과는 workspace/(설정/·매일논문/·내사본/)에만 쓴다. 담당·스킬 글을 화면에서 고치면 workspace/내사본/에 사본으로 저장한다.
 담당 시험·새로 시작·매일 실행은 이 컴퓨터의 Claude Code(claude -p)로 담당을 부른다. 조테로 탐색은 읽기만 한다.
 """
 import datetime, importlib.util, json, os, pathlib, plistlib, re, shutil, subprocess, sys, tempfile, threading, time, urllib.parse, urllib.request, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "매일논문"
-CFG_FILE, INFO_FILE = ROOT / "설정/매일논문.json", ROOT / "설정/연구자_정보.md"
+ROOT = pathlib.Path(__file__).resolve().parent.parent  # 코드(이 저장소)
+DATA = ROOT / "workspace"  # 내 작업공간: 개인 설정·결과·내 사본만(git에 안 올라감)
+OUT = DATA / "매일논문"
+MINE = DATA / "내사본"  # 화면에서 고친 담당·스킬 글. 저장소의 같은 경로 파일 대신 쓴다(도구 권한은 늘 저장소 것)
+ready = lambda: (DATA / "설정").is_dir()
+CFG_FILE, INFO_FILE = ROOT / "workspace/설정/매일논문.json", ROOT / "workspace/설정/연구자_정보.md"
 PLIST = pathlib.Path.home() / "Library/LaunchAgents/com.daily-paper.plist"  # 매일 예약(launchd)
-SCOUT_FILE = ROOT / "설정/paper-scout.json"  # 담당별 설정: paper-scout(키워드·기간·후보 수)
-ZOTERO_FILE = ROOT / "설정/zotero-keeper.json"  # zotero-keeper(사용·컬렉션). 선택 담당
+SCOUT_FILE = ROOT / "workspace/설정/paper-scout.json"  # 담당별 설정: paper-scout(키워드·기간·후보 수)
+ZOTERO_FILE = ROOT / "workspace/설정/zotero-keeper.json"  # zotero-keeper(사용·컬렉션). 선택 담당
 ZOTERO_DEFAULT = {"사용": True, "컬렉션": "자동수집"}
-READER_FILE = ROOT / "설정/paper-reader.json"  # paper-reader(사용·요약할_편수). 선택 담당
+READER_FILE = ROOT / "workspace/설정/paper-reader.json"  # paper-reader(사용·요약할_편수). 선택 담당
 READER_DEFAULT = {"사용": True, "요약할_편수": 2}
-NOTION_FILE = ROOT / "설정/notion-publisher.json"  # notion-publisher(표지·아카이브 주소). 필수 담당, 새로 시작 때 담당이 쓴다
+NOTION_FILE = ROOT / "workspace/설정/notion-publisher.json"  # notion-publisher(표지·아카이브 주소). 필수 담당, 새로 시작 때 담당이 쓴다
 NOTION_DEFAULT = {"notion_url": "", "notion_db_url": ""}
 AGENTS = ROOT / ".claude/agents"
 VERSION = (ROOT / "VERSION").read_text().strip() if (ROOT / "VERSION").exists() else "?"  # MAJOR.MINOR.PATCH, 규칙은 CLAUDE.md 7절
@@ -45,19 +48,19 @@ def front(text):
     return dict(re.findall(r"^(\w+):\s*(.+)$", m.group(1), re.M)) if m else {}
 
 
-# 파일 메뉴: (묶음, 위치 패턴, 화면에서 고칠 수 있나). 고칠 수 있는 것은 담당·스킬·규칙 글(.md)뿐이다.
+# 파일 메뉴: (묶음, 위치 패턴, 화면에서 고칠 수 있나). 고칠 수 있는 것은 담당·스킬 글(.md)뿐이고, 저장하면 workspace/내사본/에 사본으로 남는다.
 # 설정은 처음 설정의 각 단계 화면에서, 스크립트와 판정 장치는 화면에서 고치지 않는다(읽기만).
 FILE_GROUPS = [("담당 에이전트", ".claude/agents/*.md", True), ("스킬 · 업무 매뉴얼", ".claude/skills/*/SKILL.md", True),
                ("스킬 · 참고 틀", ".claude/skills/*/references/*.md", True), ("스킬 · 스크립트", ".claude/skills/*/scripts/*.py", False),
-               ("규칙·안내", "CLAUDE.md", True), ("규칙·안내", "시작하기.md", True), ("설정", "설정/*.json", False), ("설정", "설정/*.md", False),
+               ("규칙·안내", "CLAUDE.md", False), ("규칙·안내", "시작하기.md", False), ("설정", "workspace/설정/*.json", False), ("설정", "workspace/설정/*.md", False),
                ("스크립트·훅", "scripts/*.py", False), ("스크립트·훅", ".claude/hooks/*.py", False), ("스크립트·훅", ".claude/settings.json", False)]
-FILE_DESC = {"CLAUDE.md": "메인(대화·실행기)이 세션마다 읽는 규칙, 담당표, 호출표", "시작하기.md": "원본 저장소에서 '설정해 줘'로 처음 설정할 때 Claude가 따르는 순서",
-             "설정/매일논문.json": "하루에 받을 편수(찾을_편수). 고치는 곳: 처음 설정 → 논문 찾기",
-             "설정/paper-scout.json": "paper-scout 설정: 키워드·기간·키워드당 후보. 고치는 곳: 처음 설정 → 논문 찾기",
-             "설정/zotero-keeper.json": "zotero-keeper 설정: 사용·컬렉션. 고치는 곳: 처음 설정 → 조테로 저장",
-             "설정/paper-reader.json": "paper-reader 설정: 사용·요약할 편수. 고치는 곳: 처음 설정 → 요약",
-             "설정/notion-publisher.json": "notion-publisher 설정: 표지·아카이브 주소. 새로 시작 때 담당이 씁니다",
-             "설정/연구자_정보.md": "privacy-guard가 보는 '넣으면 안 되는 자료'. 고치는 곳: 처음 설정 → 넣으면 안 되는 자료",
+FILE_DESC = {"CLAUDE.md": "메인(대화·실행기)이 세션마다 읽는 규칙, 담당표, 호출표", "시작하기.md": "'설정해 줘'로 처음 설정할 때 Claude가 따르는 순서",
+             "workspace/설정/매일논문.json": "하루에 받을 편수(찾을_편수). 고치는 곳: 처음 설정 → 논문 찾기",
+             "workspace/설정/paper-scout.json": "paper-scout 설정: 키워드·기간·키워드당 후보. 고치는 곳: 처음 설정 → 논문 찾기",
+             "workspace/설정/zotero-keeper.json": "zotero-keeper 설정: 사용·컬렉션. 고치는 곳: 처음 설정 → 조테로 저장",
+             "workspace/설정/paper-reader.json": "paper-reader 설정: 사용·요약할 편수. 고치는 곳: 처음 설정 → 요약",
+             "workspace/설정/notion-publisher.json": "notion-publisher 설정: 표지·아카이브 주소. 새로 시작 때 담당이 씁니다",
+             "workspace/설정/연구자_정보.md": "privacy-guard가 보는 '넣으면 안 되는 자료'. 고치는 곳: 처음 설정 → 넣으면 안 되는 자료",
              ".claude/settings.json": "Claude Code 프로젝트 설정: 판정 루프 훅 등록"}
 BACKUP = OUT / "파일백업"  # 화면에서 저장하기 전 원래 내용을 여기 남긴다(git에 안 올라감)
 
@@ -81,9 +84,11 @@ def file_list():
             if rel in seen or not f.is_file():
                 continue
             seen.add(rel)
-            text = f.read_text(errors="replace")
-            out.append({"group": group, "path": rel, "desc": file_desc(rel, text), "editable": editable,
-                        "size": f.stat().st_size, "mtime": f.stat().st_mtime_ns})
+            mine = editable and (MINE / rel).is_file()
+            g = MINE / rel if mine else f  # 내 사본이 있으면 그것이 지금 쓰는 내용
+            text = g.read_text(errors="replace")
+            out.append({"group": group, "path": rel, "desc": file_desc(rel, text), "editable": editable, "mine": mine,
+                        "size": g.stat().st_size, "mtime": g.stat().st_mtime_ns})
     return out
 
 
@@ -91,15 +96,17 @@ def file_get(rel):
     item = next((x for x in file_list() if x["path"] == rel), None)  # 목록에 있는 파일만 연다(../ 같은 경로 막기)
     if not item:
         return 404, {"error": "목록에 없는 파일입니다"}
-    return 200, item | {"text": (ROOT / rel).read_text(errors="replace")}
+    return 200, item | {"text": ((MINE if item["mine"] else ROOT) / rel).read_text(errors="replace")}
 
 
 def file_save(rel, text, mtime):
-    """화면에서 고친 담당·스킬·규칙 글을 저장한다. 열어 둔 뒤 다른 곳에서 바뀌었으면 덮어쓰지 않는다. 원래 내용은 파일백업에 남긴다."""
+    """화면에서 고친 담당·스킬 글을 workspace/내사본/에 저장한다(저장소 파일은 그대로). 열어 둔 뒤 바뀌었으면 덮어쓰지 않는다. 고치기 전 내용은 파일백업에 남긴다."""
     item = next((x for x in file_list() if x["path"] == rel), None)
     if not item or not item["editable"]:
         return False, "화면에서 고칠 수 없는 파일입니다"
-    f = ROOT / rel
+    if not ready():
+        return False, "작업공간(workspace/)이 없습니다. 기본 점검에서 '작업공간 만들기'를 누르세요"
+    f = MINE / rel if item["mine"] else ROOT / rel
     if mtime and int(mtime) != f.stat().st_mtime_ns:
         return False, "열어 둔 뒤 다른 곳에서 이 파일이 바뀌었습니다. 다시 열어 최신 내용에 고쳐 주세요"
     want = f.parent.name if f.name == "SKILL.md" else f.stem if rel.startswith(".claude/agents/") else None
@@ -107,9 +114,27 @@ def file_save(rel, text, mtime):
         return False, f"머리말(--- 사이)에 'name: {want}'이 있어야 합니다"
     BACKUP.mkdir(parents=True, exist_ok=True)
     (BACKUP / f"{time.strftime('%Y%m%d-%H%M%S')}_{rel.replace('/', '__')}").write_text(f.read_text())
-    f.write_text(text)
+    (MINE / rel).parent.mkdir(parents=True, exist_ok=True)
+    (MINE / rel).write_text(text)
     CHECKS.pop("에이전트", None)
-    return True, f"{rel} 저장 — 대시보드의 시험·지금 논문 찾기·예약은 다음 실행부터 바로 반영됩니다(원래 내용은 매일논문/파일백업/)"
+    return True, f"workspace/내사본/{rel}에 저장 — 다음 실행부터 저장소 글 대신 쓰입니다(고치기 전 내용은 workspace/매일논문/파일백업/)"
+
+
+def file_reset(rel):
+    """내 사본을 지워 저장소 글로 되돌린다(사본은 파일백업으로 옮긴다)."""
+    item = next((x for x in file_list() if x["path"] == rel), None)
+    if not item or not item["mine"]:
+        return False, "내 사본이 없는 파일입니다"
+    BACKUP.mkdir(parents=True, exist_ok=True)
+    shutil.move(MINE / rel, BACKUP / f"{time.strftime('%Y%m%d-%H%M%S')}_내사본_{rel.replace('/', '__')}")
+    CHECKS.pop("에이전트", None)
+    return True, f"{rel}을 저장소 글로 되돌렸습니다(지운 사본은 workspace/매일논문/파일백업/)"
+
+
+def agent_text(f):
+    """담당 파일의 지금 쓰는 내용: 내 사본이 있으면 그것."""
+    m = MINE / f.relative_to(ROOT)
+    return (m if m.is_file() else f).read_text()
 
 
 def day_record(d):
@@ -201,7 +226,7 @@ def library_data():
 
 
 def library_sync():
-    """노션과 동기화: notion-publisher에게 '서재 내보내기'를 맡긴다(노션은 읽기만, 쓰는 것은 매일논문/서재.json 하나)."""
+    """노션과 동기화: notion-publisher에게 '서재 내보내기'를 맡긴다(노션은 읽기만, 쓰는 것은 workspace/매일논문/서재.json 하나)."""
     if (p := LIB_RUN.get("proc")) and p.poll() is None:
         return False, "이미 동기화 중입니다"
     if not read_json(NOTION_FILE, NOTION_DEFAULT).get("notion_db_url"):
@@ -236,11 +261,12 @@ def state():
         "version": VERSION,
         "tests": {f.stem: read_json(TESTS / f.stem / "결과.json") for f in AGENTS.glob("*.md")},
         "info": INFO_FILE.read_text(),
-        "agents": [{"name": f.stem, "text": f.read_text(), **{k: v for k, v in front(f.read_text()).items() if k in ("model", "tools", "description")},
+        "agents": [{"name": f.stem, "text": agent_text(f), "mine": (MINE / f.relative_to(ROOT)).is_file(),
+                    **{k: v for k, v in front(f.read_text()).items() if k in ("model", "tools", "description")},
                     "unset": "_ID__" in f.read_text()} for f in sorted(AGENTS.glob("*.md"))],
         "days": [day_record(d) for d in sorted(OUT.glob("20*"), reverse=True) if (d / "목록.json").exists()],
         "schedule": schedule_get(),
-        "readonly": (ROOT / ".git").exists(),
+        "readonly": not ready(),  # 작업공간이 없으면 보기만
         "root": str(ROOT),
         "today": datetime.date.today().isoformat(),
         "checks": {"claude": claude_now(), "기본": CHECKS.get("기본") or run_check("기본"),
@@ -408,25 +434,11 @@ def run_status():
 
 
 def make_workspace():
-    """원본 저장소 안에 작업공간 workspace/를 만든다(시작하기.md 2단계의 rsync와 같은 것을 뺀다). 이미 있으면 그대로 쓴다."""
-    ws = ROOT / "workspace"
-    if not (ROOT / ".git").exists():
-        return False, "이미 작업공간에서 열려 있습니다"
-    if not (ws / "scripts" / "대시보드.py").exists():
-        if ws.exists():
-            return False, f"{ws} 폴더가 있지만 작업공간이 아닙니다. 확인한 뒤 옮기거나 지우고 다시 누르세요"
-        def skip(d, names):
-            d = pathlib.Path(d)
-            return [n for n in names if n in (".git", ".idea", "__pycache__", ".DS_Store", "매일논문")
-                    or (d == ROOT and n == "workspace") or (d == ROOT / ".claude" and n == "worktrees")]
-        shutil.copytree(ROOT, ws, ignore=skip, symlinks=True)
-    return True, str(ws)
-
-
-def reopen_in(ws, port):
-    """대시보드를 작업공간 쪽 대시보드로 바꿔 띄운다(같은 포트, 새 창은 열지 않음). 응답을 보낸 뒤 부른다."""
-    os.environ["DASH_REOPEN"] = "1"
-    os.execv(sys.executable, [sys.executable, str(ws / "scripts" / "대시보드.py"), str(port)])
+    """내 작업공간 workspace/를 만든다: 저장소의 기본 설정(설정/)을 workspace/설정/으로 복사하고 결과 폴더를 둔다. 코드는 복사하지 않는다."""
+    if not ready():
+        shutil.copytree(ROOT / "설정", DATA / "설정")
+    OUT.mkdir(parents=True, exist_ok=True)
+    return True, str(DATA)
 
 
 def schedule_get():
@@ -458,7 +470,7 @@ def schedule_set(at):
     return (r.returncode == 0), (f"매일 {at}에 돕니다(그 시각에 Mac이 켜져 있어야 합니다)" if r.returncode == 0 else "launchd 등록 실패: " + r.stderr.strip())
 
 
-TESTS = OUT / "시험"  # 담당 시험 결과: 매일논문/시험/{담당}/(실행.jsonl, 결과.json)
+TESTS = OUT / "시험"  # 담당 시험 결과: workspace/매일논문/시험/{담당}/(실행.jsonl, 결과.json)
 AGENT_RUNS = {}  # 담당 시험은 담당마다 한 번에 하나
 TEST_PREP = {"paper-reader": [sys.executable, str(ROOT / "scripts/매일논문.py"), "시험준비"]}  # paper-scout 시험 후보에서 PDF 한 편
 
@@ -511,22 +523,24 @@ NEW_START = re.compile(r"새로 시작: (https://([\w-]+\.)?notion\.(so|site|com
 
 
 def agents_json():
-    """이 폴더의 담당 파일 전부를 --agents JSON으로. 작업공간이 원본 저장소(git) 안에 있으면 Claude Code가 저장소 맨 위의
-    .claude/agents(예전 담당)를 이 폴더 것보다 앞세우므로, 대시보드가 띄우는 실행은 늘 이 폴더의 담당 파일로 못 박는다."""
+    """담당 파일 전부를 --agents JSON으로 못 박는다. 본문은 내 사본(workspace/내사본/)이 있으면 그것을 쓰고,
+    머리말(도구·모델·스킬)은 늘 저장소 파일 것을 쓴다(사본으로 권한을 넓히지 못하게)."""
     out = {}
     for f in sorted(AGENTS.glob("*.md")):
         text = f.read_text()
+        mine = re.match(r"---\n.*?\n---\n?", agent_text(f), re.S)
         head = re.match(r"---\n(.*?)\n---\n?", text, re.S)
         meta = front(text)
         skills = re.findall(r"^\s+-\s+(\S+)", re.search(r"^skills:\n((?:\s+-.*\n?)*)", head.group(1) + "\n", re.M).group(1), re.M) \
             if head and re.search(r"^skills:", head.group(1), re.M) else []
-        out[f.stem] = {"description": meta.get("description", ""), "prompt": text[head.end():] if head else text,
+        body = agent_text(f)[mine.end():] if mine else agent_text(f)
+        out[f.stem] = {"description": meta.get("description", ""), "prompt": body,
                        "tools": agent_tools(f.stem), **({"model": meta["model"]} if meta.get("model") else {}), **({"skills": skills} if skills else {})}
     return out
 
 
 def start_agent_test(name, task="시험"):
-    """담당 시험: 이 컴퓨터의 Claude Code를 작업공간에서 머리 없이 띄워 그 담당에게 '시험'(스킬의 할 일 C)을 맡긴다. 기록은 실행.jsonl."""
+    """담당 시험: 이 컴퓨터의 Claude Code를 이 저장소에서 머리 없이 띄워 그 담당에게 '시험'(스킬의 할 일 C)을 맡긴다. 기록은 실행.jsonl."""
     if not re.fullmatch(r"[\w-]+", name or "") or not (AGENTS / f"{name}.md").exists() or not (ROOT / f".claude/skills/{name}/SKILL.md").exists():
         return False, "시험할 수 없는 담당입니다"
     if task != "시험" and not (name == "notion-publisher" and NEW_START.fullmatch(task or "")):  # 화면이 맡길 수 있는 일은 이 둘뿐
@@ -573,8 +587,8 @@ def launch(exe, name, task, job, log):
 
 
 def notion_new_state():
-    """노션 새로 시작의 새 주소(매일논문/시험/notion-publisher/새로시작.json, 담당이 씀).
-    시험이 통과하고 결과의 주소가 같으면 그때 설정/notion-publisher.json(지금 쓰는 노션)에 옮긴다. 실패하면 설정은 그대로."""
+    """노션 새로 시작의 새 주소(workspace/매일논문/시험/notion-publisher/새로시작.json, 담당이 씀).
+    시험이 통과하고 결과의 주소가 같으면 그때 workspace/설정/notion-publisher.json(지금 쓰는 노션)에 옮긴다. 실패하면 설정은 그대로."""
     d = TESTS / "notion-publisher"
     cand = read_json(d / "새로시작.json")
     if not cand:
@@ -587,7 +601,7 @@ def notion_new_state():
     if not res:  # 대시보드를 다시 켜서 실행을 놓쳤거나 아직 결과가 없다
         return cand | {"상태": "결과 기다림"}
     same = res.get("notion_url") == cand.get("notion_url") and res.get("notion_db_url") == cand.get("notion_db_url")
-    ok = bool(res.get("통과")) and same and not (ROOT / ".git").exists()
+    ok = bool(res.get("통과")) and same and ready()
     if ok:
         NOTION_FILE.write_text(json.dumps({"notion_url": cand["notion_url"], "notion_db_url": cand["notion_db_url"]}, ensure_ascii=False, indent=2) + "\n")
         CHECKS.pop("에이전트", None)
@@ -704,7 +718,7 @@ def save(kind, name, text):
             return False, err
         CFG_FILE.write_text(json.dumps(c, ensure_ascii=False, indent=2) + "\n")
         CHECKS.pop("에이전트", None)  # 설정이 바뀌었으니 다시 점검하게
-        return True, "설정/매일논문.json 저장"
+        return True, "workspace/설정/매일논문.json 저장"
     if kind in AGENT_CFG:
         f, check = AGENT_CFG[kind]
         try:
@@ -715,21 +729,26 @@ def save(kind, name, text):
             return False, err
         f.write_text(json.dumps(s, ensure_ascii=False, indent=2) + "\n")
         CHECKS.pop("에이전트", None), CHECKS.pop("찾기", None), CHECKS.pop("조테로", None), CHECKS.pop("요약", None)
-        return True, f"설정/{f.name} 저장 — 바뀐 설정은 시험을 다시 해야 통과로 칩니다"
+        return True, f"workspace/설정/{f.name} 저장 — 바뀐 설정은 시험을 다시 해야 통과로 칩니다"
     if kind == "info":
         INFO_FILE.write_text(text)
         CHECKS.pop("에이전트", None)
-        return True, "설정/연구자_정보.md 저장"
+        return True, "workspace/설정/연구자_정보.md 저장"
     if kind == "agent":
         f = AGENTS / f"{name}.md"
         if not re.fullmatch(r"[\w-]+", name or "") or not f.exists():
             return False, "없는 담당 에이전트입니다"
         if front(text).get("name") != name:
             return False, f"머리말(--- 사이)에 'name: {name}'이 있어야 합니다"
-        f.write_text(text)
+        m = MINE / f.relative_to(ROOT)
+        m.parent.mkdir(parents=True, exist_ok=True)
+        m.write_text(text)
         CHECKS.pop("에이전트", None)
-        return True, f"{f.name} 저장 — 담당 에이전트는 Claude Code 새 세션부터 반영됩니다"
+        return True, f"workspace/내사본/.claude/agents/{f.name}에 저장 — 대시보드 실행은 다음부터, Claude Code 대화는 새 세션부터 반영됩니다"
     return False, "고칠 수 없는 파일입니다"
+
+
+NO_WS = "작업공간(workspace/)이 없어 저장·실행하지 않습니다. 처음 설정 → 기본 점검에서 '작업공간 만들기'를 누르세요"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -754,7 +773,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/run":
             return self.reply(200, run_status())
         if self.path == "/api/files":
-            return self.reply(200, {"files": file_list(), "readonly": (ROOT / ".git").exists()})
+            return self.reply(200, {"files": file_list(), "readonly": not ready()})
         if self.path.startswith("/api/file?"):
             return self.reply(*file_get(dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(self.path).query)).get("path", "")))
         if self.path.startswith("/api/agent/test?"):
@@ -774,24 +793,25 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403, {"error": "로컬 JSON 요청만"})
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         if self.path == "/api/save":
-            if (ROOT / ".git").exists():  # 공개 저장소에는 개인 값을 쓰지 않는다
-                return self.reply(403, {"ok": False, "msg": "원본 저장소라 저장하지 않습니다. 작업공간 폴더에서 대시보드를 여세요"})
-            ok, msg = (file_save(str(body.get("name") or ""), body.get("text", ""), body.get("mtime")) if body.get("kind") == "file"
-                       else save(body.get("kind"), body.get("name"), body.get("text", "")))
+            if not ready():  # 개인 값은 작업공간에만 쓴다
+                return self.reply(403, {"ok": False, "msg": NO_WS})
+            kind, name = body.get("kind"), str(body.get("name") or "")
+            ok, msg = (file_save(name, body.get("text", ""), body.get("mtime")) if kind == "file" else file_reset(name) if kind == "file-reset"
+                       else save(kind, name, body.get("text", "")))
             return self.reply(200 if ok else 400, {"ok": ok, "msg": msg})
         if self.path == "/api/run":
-            if (ROOT / ".git").exists():
-                return self.reply(403, {"ok": False, "msg": "원본 저장소에서는 실행하지 않습니다. 작업공간 폴더에서 대시보드를 여세요"})
+            if not ready():
+                return self.reply(403, {"ok": False, "msg": NO_WS})
             ok, msg = start_run(extra=True)
             return self.reply(200 if ok else 409, {"ok": ok, "msg": msg})
         if self.path == "/api/agent/test":
-            if (ROOT / ".git").exists():
-                return self.reply(403, {"ok": False, "msg": "원본 저장소에서는 시험하지 않습니다. 작업공간 폴더에서 대시보드를 여세요"})
+            if not ready():
+                return self.reply(403, {"ok": False, "msg": NO_WS})
             ok, msg = start_agent_test(str(body.get("name", "")), str(body.get("task") or "시험"))
             return self.reply(200 if ok else 409, {"ok": ok, "msg": msg})
         if self.path == "/api/library/sync":
-            if (ROOT / ".git").exists():
-                return self.reply(403, {"ok": False, "msg": "원본 저장소에서는 동기화하지 않습니다. 작업공간 폴더에서 대시보드를 여세요"})
+            if not ready():
+                return self.reply(403, {"ok": False, "msg": NO_WS})
             ok, msg = library_sync()
             return self.reply(200 if ok else 409, {"ok": ok, "msg": msg})
         if self.path == "/api/claude":
@@ -799,18 +819,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/help":
             return self.reply(200, help_answer(str(body.get("step", ""))[:40], str(body.get("detail", "")), str(body.get("question", ""))[:1000]))
         if self.path == "/api/schedule":
-            if (ROOT / ".git").exists():
-                return self.reply(403, {"ok": False, "msg": "원본 저장소에서는 예약하지 않습니다. 작업공간 폴더에서 대시보드를 여세요"})
+            if not ready():
+                return self.reply(403, {"ok": False, "msg": NO_WS})
             ok, msg = schedule_set(str(body.get("at") or ""))
             return self.reply(200 if ok else 400, {"ok": ok, "msg": msg})
         if self.path == "/api/check":
             return self.reply(200, run_check(body.get("mode") if body.get("mode") in SECTION_MODES else "에이전트"))
         if self.path == "/api/workspace":
             ok, msg = make_workspace()
-            self.reply(200 if ok else 400, {"ok": ok, "msg": msg})
-            if ok:
-                threading.Timer(0.5, reopen_in, (pathlib.Path(msg), self.server.server_address[1])).start()
-            return
+            return self.reply(200 if ok else 400, {"ok": ok, "msg": msg})
         self.reply(404, {"error": "없음"})
 
     def log_message(self, *a):
@@ -1167,7 +1184,7 @@ const STEPS=[
  {k:'요약',agent:'paper-reader',optional:true,d:'선택 단계. paper-reader가 PDF를 받은 논문을 정해진 양식으로 요약하고 판정 기준으로 점검합니다. 쓰지 않으려면 "사용 안 함"으로 두면 노션에는 초록만 올라갑니다.',
   done:()=>!S.reader.사용||testOk('paper-reader',S.reader),fail:()=>testWhy('paper-reader',S.reader)},
  {k:'넣으면 안 되는 자료',agent:'privacy-guard',d:'노션에 올리기 전에 privacy-guard가 점검할 자료 종류를 정하고, 시험으로 실제 결과는 통과시키고 가짜 민감 자료는 막는지 확인합니다.',done:()=>infoFilled()&&testOk('privacy-guard',{}),
-  fail:()=>!infoFilled()?'설정/연구자_정보.md의 "이 폴더에 넣으면 안 되는 자료" 칸이 비어 있습니다.':testWhy('privacy-guard',{})},
+  fail:()=>!infoFilled()?'workspace/설정/연구자_정보.md의 "이 폴더에 넣으면 안 되는 자료" 칸이 비어 있습니다.':testWhy('privacy-guard',{})},
  {k:'노션 올리기',agent:'notion-publisher',d:'필수 단계. notion-publisher가 논문을 쌓을 노션 페이지를 꾸미고(페이지 하나만 주면 아카이브와 표지를 만듭니다), 시험으로 실제 연결을 확인합니다.',
   done:()=>!!S.notion.notion_db_url&&testOk('notion-publisher',S.notion),
   fail:()=>!S.notion.notion_db_url?'아직 노션 페이지를 정하지 않았습니다. 아래에 페이지 주소를 넣고 "새로 시작"을 누르세요.':testWhy('notion-publisher',S.notion)},
@@ -1229,25 +1246,25 @@ function checkCard(mode,title,auto){const box=el('div'),btn=el('button',{classNa
 const waitBox=t=>el('div',{className:'result wait'},el('span',{className:'spin'}),el('div',{},t));
 const badBox=t=>el('div',{className:'result bad'},el('span',{},'!'),el('div',{},t));
 
-// 원본 저장소에서 열렸을 때: 누르면 workspace/를 만들고(이 클릭이 승인) 대시보드가 그쪽으로 다시 뜬다
+// 작업공간이 없을 때: 누르면 workspace/에 기본 설정만 복사해 만들고(이 클릭이 승인) 화면을 다시 읽는다
 function wsCard(){const box=el('div'),btn=el('button',{className:'btn',type:'button'},'작업공간 만들기');
  btn.onclick=async()=>{btn.disabled=true;box.replaceChildren(waitBox('작업공간을 만드는 중…'));
   const r=await post('/api/workspace',{}).catch(()=>({ok:false,msg:'대시보드에 연결하지 못했습니다'}));
   if(!r.ok){btn.disabled=false;return box.replaceChildren(badBox(r.msg))}
-  box.replaceChildren(waitBox(`만들었습니다 · ${r.msg} 쪽으로 대시보드를 다시 여는 중…`));
+  box.replaceChildren(waitBox(`만들었습니다 · ${r.msg}`));
   for(let i=0;i<40;i++){await new Promise(f=>setTimeout(f,500));
    const s=await fetch('/api/state').then(x=>x.json()).catch(()=>null);if(s&&!s.readonly)return location.reload()}
-  box.replaceChildren(badBox('다시 열리지 않았습니다. 터미널에서 run.sh(Windows는 run.bat)를 다시 실행하세요.'))};
- return card('작업공간 만들기',`지금은 원본 저장소(${S.root})에서 열려 있어 설정을 저장할 수 없습니다.`,
-  el('div',{className:'mini'},el('p',{},'누르면 이 저장소 안에 workspace/ 폴더를 만들고 파일을 복사합니다(.git과 매일논문 결과는 빼고). 키워드·노션 주소 같은 내 설정은 그 폴더에만 저장되고, .gitignore에 들어 있어 git에 올라가지 않습니다.'),
-   el('p',{},'만든 뒤에는 대시보드가 작업공간 쪽으로 저절로 다시 열립니다. 다음부터는 run.sh(Windows는 run.bat)가 작업공간을 바로 엽니다.')),
+  box.replaceChildren(badBox('만든 뒤 화면을 다시 읽지 못했습니다. 새로고침하세요.'))};
+ return card('작업공간 만들기',`아직 내 작업공간(${S.root}/workspace)이 없어 설정을 저장할 수 없습니다.`,
+  el('div',{className:'mini'},el('p',{},'누르면 이 저장소 안에 workspace/ 폴더를 만들고 기본 설정(설정/)만 복사합니다. 코드는 복사하지 않습니다.'),
+   el('p',{},'키워드·노션 주소 같은 내 설정(workspace/설정/), 매일 받는 논문(workspace/매일논문/), 화면에서 고친 담당·스킬 글(workspace/내사본/)은 그 폴더에만 저장되고, .gitignore에 들어 있어 git에 올라가지 않습니다.')),
   box,el('div',{className:'row-actions',style:'margin-top:14px'},btn))}
 
 // 담당 에이전트 카드(이름·모델·도구·커넥터 상태, 파일 편집)
 function agentCard(a){const ta=el('textarea',{value:a.text,rows:18});const ed=el('div',{hidden:true},ta,
-  el('div',{className:'row-actions',style:'margin-top:10px'},el('button',{className:'btn',onclick:()=>save('agent',ta.value,a.name)},'저장'),el('button',{className:'btn ghost',onclick:()=>{ta.value=a.text;ed.hidden=true}},'취소')));
+  el('div',{className:'row-actions',style:'margin-top:10px'},el('button',{className:'btn',onclick:()=>save('agent',ta.value,a.name)},'내 사본으로 저장'),el('span',{className:'nxhint'},'저장소 파일은 그대로 두고 workspace/내사본/에 저장합니다. 도구 권한은 바뀌지 않습니다'),el('button',{className:'btn ghost',onclick:()=>{ta.value=a.text;ed.hidden=true}},'취소')));
  return el('section',{className:'card'},el('div',{className:'card-h'},el('div',{},el('h2',{},a.name),el('p',{className:'desc'},(a.description||'').split(/(?<=다\.)\s/)[0])),
-   el('div',{style:'display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end'},badge('plain',a.model||'기본 모델'),a.unset?badge('warn','커넥터 빈칸'):badge('ok','연결됨'))),
+   el('div',{style:'display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end'},badge('plain',a.model||'기본 모델'),a.mine?badge('warn','내 사본'):'',a.unset?badge('warn','커넥터 빈칸'):badge('ok','연결됨'))),
   el('div',{className:'tools'},...(a.tools||'').split(',').map(t=>el('span',{className:'tool',title:t.trim()},toolName(t.trim())))),
   el('div',{style:'margin-top:14px'},el('button',{className:'btn ghost',onclick:()=>{ed.hidden=!ed.hidden}},'파일 편집')),ed)}
 const fillTask=uns=>claudeTask('설정해 줘',`빈칸(${uns.map(a=>a.name).join(', ')})을 그 세션의 노션·Exa 커넥터 이름으로 채웁니다. 커넥터가 없으면 claude.ai → 설정 → 커넥터에서 먼저 연결하라고 안내합니다.`);
@@ -1272,7 +1289,7 @@ function todoCard(k,nx){const items=(TODOS[k]||(()=>[]))(),cur=items.findIndex(x
   el('ol',{},...items.map(([t,d],j)=>el('li',{className:d?'dn':j===cur?'cur':''},el('span',{className:'tnum'},d?'✓':String(j+1)),t))),
   cur<0?el('button',{className:'btn primary',onclick:()=>{if(nx==='현황')SETUP_OPEN=false;go(nx)}},`다 했습니다 · 다음: ${nx} →`)
    :el('button',{className:'btn primary',onclick:()=>jump(items[cur][2])},`${items[cur][0]} ↓`))}
-// 담당 시험 카드: 대시보드가 이 컴퓨터의 Claude Code를 작업공간에서 띄워 그 담당에게 '시험'을 맡긴다.
+// 담당 시험 카드: 대시보드가 이 컴퓨터의 Claude Code를 이 저장소에서 띄워 그 담당에게 '시험'을 맡긴다.
 // 담당 파일의 tools만 허용하고, 진행(도구 호출)과 담당의 보고, 담당이 쓴 결과.json을 보여 준다
 const TESTPOLL={};
 function testCard(name,fresh){const box=el('div'),btn=el('button',{className:'btn primary',type:'button'},'▶ 시험 실행');let was=false;
@@ -1294,11 +1311,11 @@ function testCard(name,fresh){const box=el('div'),btn=el('button',{className:'bt
  const poll=async()=>{if(box.isConnected||!was)show(await fetch('/api/agent/test?name='+encodeURIComponent(name)).then(r=>r.json()))};
  btn.onclick=async()=>{btn.disabled=true;const r=await post('/api/agent/test',{name});if(!r.ok){toast(r.msg);btn.disabled=false;return}was=true;poll()};
  queueMicrotask(poll);
- const c=card(`${name} 시험`,`이 컴퓨터의 Claude Code로 ${name}를 불러 실제로 해 봅니다. ${TEST_NOTE[name]||''} 기록은 매일논문/시험/${name}/에 남고 그날 논문에는 섞이지 않습니다.`,
+ const c=card(`${name} 시험`,`이 컴퓨터의 Claude Code로 ${name}를 불러 실제로 해 봅니다. ${TEST_NOTE[name]||''} 기록은 workspace/매일논문/시험/${name}/에 남고 그날 논문에는 섞이지 않습니다.`,
   el('div',{className:'row-actions',style:'margin-bottom:4px'},btn),box);
  if(!(S.tests[name]&&S.tests[name].통과&&fresh))c.classList.add('focus');  // 아직 통과 못 한 시험은 테두리로 눈에 띄게
  return c}
-// 파일 메뉴: 위치·설명 목록과 편집기. 담당·스킬·규칙 글(.md)만 고칠 수 있고, 저장 전 원래 내용은 매일논문/파일백업/에 남는다
+// 파일 메뉴: 위치·설명 목록과 편집기. 담당·스킬 글(.md)만 고칠 수 있고, 저장하면 workspace/내사본/에 사본으로 남는다(저장소 파일은 그대로)
 let FILESEL=null;
 function filesPage(){const list=el('div',{className:'list'}),ed=el('div',{className:'fedit'});
  const open=async path=>{if(dirty&&!confirm('저장하지 않은 변경이 있습니다. 다른 파일을 열까요?'))return;dirty=false;FILESEL=path;
@@ -1308,14 +1325,16 @@ function filesPage(){const list=el('div',{className:'list'}),ed=el('div',{classN
   const ro=!f.editable||S.readonly,ta=el('textarea',{value:f.text,readOnly:ro,spellcheck:false,oninput:mark});
   const saveBtn=el('button',{className:'btn',disabled:ro,onclick:async()=>{saveBtn.disabled=true;
    const r=await post('/api/save',{kind:'file',name:f.path,text:ta.value,mtime:f.mtime}).catch(e=>({ok:false,msg:String(e)}));
-   toast((r.ok?'저장했습니다 · ':'저장 못 함 · ')+r.msg);saveBtn.disabled=false;if(r.ok){dirty=false;open(f.path)}}},'저장');
+   toast((r.ok?'저장했습니다 · ':'저장 못 함 · ')+r.msg);saveBtn.disabled=false;if(r.ok){dirty=false;open(f.path)}}},f.mine?'내 사본 저장':'내 사본으로 저장');
+  const resetBtn=f.mine&&!ro?el('button',{className:'btn ghost',onclick:async()=>{if(!confirm('내 사본을 지우고 저장소 글로 되돌릴까요? (지운 사본은 파일백업에 남습니다)'))return;
+   const r=await post('/api/save',{kind:'file-reset',name:f.path});toast(r.msg);if(r.ok){dirty=false;open(f.path)}}},'원래대로(사본 지우기)'):'';
   ed.replaceChildren(card(f.path,f.desc,
-   el('div',{style:'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px'},badge('plain',f.group),badge(ro?'plain':'ok',!f.editable?'읽기만':S.readonly?'원본 저장소라 읽기만':'고칠 수 있음'),badge('plain',`${(f.size/1024).toFixed(1)} KB`)),
-   ta,ro?'':el('div',{className:'row-actions',style:'margin-top:10px'},saveBtn,el('button',{className:'btn ghost',onclick:()=>{dirty=false;open(f.path)}},'되돌리기'),
+   el('div',{style:'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px'},badge('plain',f.group),badge(ro?'plain':'ok',!f.editable?'읽기만(저장소)':S.readonly?'작업공간이 없어 읽기만':f.mine?'내 사본 사용 중':'고치면 내 사본으로'),badge('plain',`${(f.size/1024).toFixed(1)} KB`)),
+   ta,ro?'':el('div',{className:'row-actions',style:'margin-top:10px'},saveBtn,el('button',{className:'btn ghost',onclick:()=>{dirty=false;open(f.path)}},'고친 것 취소'),resetBtn,
     el('span',{className:'nxhint'},f.path.endsWith('SKILL.md')||f.path.startsWith('.claude/agents/')?"머리말(--- 사이)의 name은 그대로 두세요":''))))};
  fetch('/api/files').then(r=>r.json()).then(({files})=>{let g='';
   list.replaceChildren(...files.flatMap(f=>{const b=el('button',{className:'li'+(f.path===FILESEL?' on':''),onclick:()=>open(f.path)},
-     el('div',{className:'grow'},el('div',{className:'t'},f.path.split('/').slice(f.path.endsWith('/SKILL.md')?-2:-1).join('/'),f.editable?'':el('small',{className:'opt'},'읽기')),el('div',{className:'fpath'},f.path),el('div',{className:'m'},f.desc)));
+     el('div',{className:'grow'},el('div',{className:'t'},f.path.split('/').slice(f.path.endsWith('/SKILL.md')?-2:-1).join('/'),f.editable?(f.mine?el('small',{className:'opt'},'내 사본'):''):el('small',{className:'opt'},'읽기')),el('div',{className:'fpath'},f.path),el('div',{className:'m'},f.desc)));
     b.dataset.path=f.path;const h=f.group!==g?[el('h3',{className:'subh',style:'margin:12px 8px 4px'},g=f.group)]:[];return [...h,b]}));
   open(FILESEL&&files.some(f=>f.path===FILESEL)?FILESEL:files[0].path)});
  return [el('div',{className:'fgrid'},card('파일','위치와 설명. 눌러서 열기',el('div',{className:'flist'},list)),ed)]}
@@ -1456,19 +1475,19 @@ const PAGES={
  '기본 점검':{r(){return [S.readonly?wsCard():'',checkCard('기본','모든 담당이 함께 쓰는 것',false),
   el('div',{className:'mini',style:'margin-top:14px'},el('p',{},'노션·Exa 커넥터는 이 화면에서 확인할 수 없습니다. claude.ai → 설정 → 커넥터에서 연결하고, 그 커넥터를 쓰는 담당 단계(논문 찾기·노션 올리기)에서 이어서 확인합니다.'))]}},
  '조테로 저장':{r(){const z=S.zotero,on=el('input',{type:'checkbox',id:'zon',checked:z.사용,onchange:mark,style:'width:auto;margin:0;flex:none'});
-  return withAgent('zotero-keeper',[card('zotero-keeper 설정','설정/zotero-keeper.json · 이 컴퓨터의 조테로 7 앱에만 저장합니다(밖으로 나가는 것 없음).',
+  return withAgent('zotero-keeper',[card('zotero-keeper 설정','workspace/설정/zotero-keeper.json · 이 컴퓨터의 조테로 7 앱에만 저장합니다(밖으로 나가는 것 없음).',
    el('div',{className:'f'},el('label',{htmlFor:'zon',style:'display:flex;gap:8px;align-items:center'},on,'조테로에 저장하기'),el('div',{className:'help'},'끄면 논문은 "조테로 미저장(사용 안 함)"으로 남고, 고르기·PDF·요약·노션은 그대로 합니다.')),
    f('컬렉션',inp('zc',z.컬렉션,'text','자동수집'),'조테로 왼쪽 "내 라이브러리"에 미리 만들어 둔 컬렉션 이름'),
    saveRow(()=>save('zotero',JSON.stringify({...z,사용:on.checked,컬렉션:$('#zc').value.trim()})))),
    el('div',{style:'height:14px'}),z.사용?testCard('zotero-keeper',testFresh('zotero-keeper',z))
     :el('div',{className:'result ok'},el('span',{},'✓'),el('div',{},'조테로를 쓰지 않습니다. 다음 단계로 넘어가세요.'))])}},
  '노션 올리기':{r(){const nn=S.notion_new,busy=(S.running||[]).includes('notion-publisher');
-  return withAgent('notion-publisher',[card('지금 쓰는 노션','설정/notion-publisher.json · 새로 시작한 뒤 시험이 통과해야 바뀝니다.',newStartNote(nn),notionNow(S.notion)),
+  return withAgent('notion-publisher',[card('지금 쓰는 노션','workspace/설정/notion-publisher.json · 새로 시작한 뒤 시험이 통과해야 바뀝니다.',newStartNote(nn),notionNow(S.notion)),
   el('div',{style:'height:14px'}),startCard(),el('div',{style:'height:14px'}),S.notion.notion_db_url||nn||busy?testCard('notion-publisher',nn&&nn.상태==='실패'||testFresh('notion-publisher',S.notion))
    :el('div',{className:'empty'},'새로 시작하면 이어서 시험까지 합니다.')])}},
  '논문 찾기':{r(){const c=S.config,s=S.scout,kws=[...s.키워드];
   const box=chipBox(kws,'kw',kws.length?'키워드 더하기…':'예: mobile game player churn',mark);
-  return withAgent('paper-scout',[card('paper-scout 설정','설정/paper-scout.json · OpenAlex·Exa 검색에 쓰입니다. 바깥으로 나가니 미공개 내용은 넣지 마세요.',
+  return withAgent('paper-scout',[card('paper-scout 설정','workspace/설정/paper-scout.json · OpenAlex·Exa 검색에 쓰입니다. 바깥으로 나가니 미공개 내용은 넣지 마세요.',
    el('div',{className:'f'},el('label',{htmlFor:'kw'},'키워드'),box,el('div',{className:'help'},'Enter로 추가. 분야를 좁히는 낱말을 붙이면 다른 분야 논문이 덜 섞입니다(예: churn → mobile game player churn).')),
    el('div',{className:'two'},f('기간(일)',inp('sd',s.기간_일,'number'),'며칠 안에 나온 논문만 찾나'),f('키워드당 후보',inp('sk',s.키워드당_후보,'number'),'키워드마다 OpenAlex·Exa에서 받을 후보 수')),
    f('찾을 편수',inp('n',c.찾을_편수,'number'),'하루에 받을 논문 편수. paper-scout는 PDF 있는 관련 논문이 이만큼 모이면 검색을 멈춥니다'),
@@ -1476,7 +1495,7 @@ const PAGES={
    el('div',{style:'height:14px'}),testCard('paper-scout',testFresh('paper-scout',s))])}},
  '요약':{r(){
   const rd=S.reader,ron=el('input',{type:'checkbox',id:'ron',checked:rd.사용,onchange:mark,style:'width:auto;margin:0;flex:none'});
-  return withAgent('paper-reader',[card('paper-reader 설정','설정/paper-reader.json · 요약 양식은 스킬 paper-reader(.claude/skills/paper-reader/SKILL.md)에 있습니다.',
+  return withAgent('paper-reader',[card('paper-reader 설정','workspace/설정/paper-reader.json · 요약 양식은 스킬 paper-reader(.claude/skills/paper-reader/SKILL.md)에 있습니다.',
    el('div',{className:'f'},el('label',{htmlFor:'ron',style:'display:flex;gap:8px;align-items:center'},ron,'요약하기'),el('div',{className:'help'},'끄면 요약하지 않고 노션에는 초록만 올라갑니다(PDF는 그대로 받습니다).')),
    f('요약할 편수',inp('rm',rd.요약할_편수,'number'),`PDF를 받은 논문만 요약합니다. 찾을 편수(${S.config.찾을_편수}) 이하`),
    saveRow(()=>save('reader',JSON.stringify({...rd,사용:ron.checked,요약할_편수:+$('#rm').value})))),
@@ -1508,7 +1527,7 @@ const PAGES={
    runCard(),el('div',{style:'height:14px'}),scheduleCard(),el('div',{style:'height:14px'}),tiles,el('div',{className:'grid g2',style:'margin-top:14px'},progress,recent)]}},
 
  '실행 기록':{t:'실행 기록',d:'날짜마다 조테로 저장, 요약, 판정, 노션 업로드 결과.',r(){
-  if(!S.days.length)return [el('div',{className:'card empty'},'아직 실행 기록이 없습니다. 작업공간 세션에서 "오늘 논문 찾아 줘"로 첫 호를 만들어 보세요.')];
+  if(!S.days.length)return [el('div',{className:'card empty'},'아직 실행 기록이 없습니다. 현황에서 "지금 논문 찾기"로 첫 호를 만들어 보세요.')];
   return S.days.map(d=>{const [cl,tx]=dayStatus(d),z=d.papers.filter(p=>p.zotero_saved).length,s=d.papers.filter(p=>p.summarize).length;
    return el('section',{className:'card',style:'margin-bottom:14px'},
     el('div',{className:'card-h'},el('div',{},el('h2',{},longDate(d.day)),el('p',{className:'desc'},d.day)),badge(cl,tx)),
@@ -1597,7 +1616,7 @@ function chipBox(list,id,ph,onchange){const inp=el('input',{id,placeholder:ph,ar
  inp.onkeydown=e=>{if(e.isComposing)return;if(e.key==='Enter'||e.key===','){e.preventDefault();box.add()}else if(e.key==='Backspace'&&!inp.value&&list.length){list.pop();onchange();draw()}};
  inp.onblur=box.flush;draw();return box}
 
-// 넣으면 안 되는 자료: 설정/연구자_정보.md의 한 줄을 칩으로 고친다
+// 넣으면 안 되는 자료: workspace/설정/연구자_정보.md의 한 줄을 칩으로 고친다
 const NOGO=/^- 이 폴더에 넣으면 안 되는 자료:[ \t]*(.*)$/m;
 const NOGO_SUG=['미공개 실험 원자료','심사 중인 원고','피험자 개인정보','비밀유지계약(NDA) 자료','기업·기관에서 받은 비공개 데이터','동료의 미발표 연구','연구비 제안서·심사 자료'];
 function privacyCard(){const m=S.info.match(NOGO);let items=m?m[1].split(',').map(x=>x.trim()).filter(Boolean):[];
@@ -1610,7 +1629,7 @@ function privacyCard(){const m=S.info.match(NOGO);let items=m?m[1].split(',').ma
  const doSave=()=>{box.flush();if(!unk.checked&&!items.length)return toast('하나 이상 넣거나 "아직 모름"을 고르세요');
   const line='- 이 폴더에 넣으면 안 되는 자료: '+(unk.checked?'모름':items.join(', '));
   save('info',m?S.info.replace(NOGO,()=>line):S.info.trimEnd()+'\n\n'+line+'\n')};
- return card('넣으면 안 되는 자료','설정/연구자_정보.md',
+ return card('넣으면 안 되는 자료','workspace/설정/연구자_정보.md',
   el('div',{className:'mini'},
    el('p',{},'노션에 올리기 직전 privacy-guard가 요약·다이제스트에 이런 자료가 섞였는지 봅니다. 걸리면 올리지 않고 멈춥니다.'),
    el('p',{},'연구실·기관 규정상 밖으로 나가면 안 되는 자료의 ',el('b',{},'종류'),'를 적습니다. 파일 이름이 아니라 "NDA 자료"처럼.'),
@@ -1622,7 +1641,7 @@ function privacyCard(){const m=S.info.match(NOGO);let items=m?m[1].split(',').ma
 const isNotion=u=>/^https:\/\/([\w-]+\.)?notion\.(so|site|com)\/\S+$/.test(u);
 function claudeTask(phrase,ask){return el('div',{className:'guide'},el('h4',{},'Claude에게 맡기기'),
  el('p',{className:'why'},'노션은 Claude Code 세션의 노션 커넥터로 고칩니다. 아래 순서대로 하면 Claude가 처리합니다.'),
- el('ol',{},step('작업공간 세션 열기','Claude 앱 Code 탭에서 이 폴더로 세션을 엽니다(이미 열려 있으면 그 세션).',cmd(S.root,'Code 탭 폴더 선택')),
+ el('ol',{},step('이 저장소로 세션 열기','Claude 앱 Code 탭에서 이 폴더로 세션을 엽니다(이미 열려 있으면 그 세션).',cmd(S.root,'Code 탭 폴더 선택')),
   step('이 문장 보내기','복사해서 그대로 보냅니다.',cmd(phrase,'Claude 대화창')),
   step('물어보면 답하기',ask),
   step('대시보드 새로고침','끝나면 이 화면을 새로고침해 결과를 확인합니다.')))}
@@ -1689,7 +1708,7 @@ function scheduleCard(){const at=el('input',{type:'time',value:S.schedule||'08:0
  return card('매일 예약',S.schedule?`매일 ${S.schedule}에 돕니다`:'꺼져 있습니다',
   el('div',{className:'row-actions',style:'align-items:center'},at,el('button',{className:'btn',disabled:!!todo,onclick:()=>set(at.value)()},S.schedule?'시각 바꾸기':'예약 켜기'),
    S.schedule?el('button',{className:'btn ghost',onclick:set('')},'예약 끄기'):'',todo?el('span',{className:'nxhint'},'처음 설정을 끝내면 켤 수 있습니다'):''),
-  el('div',{className:'help'},'그 시각에 Mac이 켜져 있고 로그인돼 있어야 합니다. 기록은 매일논문/예약실행.log와 실행 기록 화면에 남습니다.'))}
+  el('div',{className:'help'},'그 시각에 Mac이 켜져 있고 로그인돼 있어야 합니다. 기록은 workspace/매일논문/예약실행.log와 실행 기록 화면에 남습니다.'))}
 
 function go(t){if(dirty&&t!==cur&&!confirm('저장하지 않은 변경이 있습니다. 떠날까요?'))return;dirty=false;cur=t;render();scrollTo(0,0)}
 let SETUP_OPEN=null;  // 처음 설정 묶음: 다 끝나면 접고, 눌러서 다시 펼 수 있다
@@ -1720,7 +1739,7 @@ function render(){
   body=todo&&!ALWAYS_OPEN.includes(cur)?[el('div',{className:'card lockcard'},el('div',{className:'lockico'},'🔒'),el('h2',{},'처음 설정을 먼저 끝내세요'),
     el('p',{className:'desc'},`${doneN}/${STEPS.length}단계를 마쳤습니다. 모두 마치면 매일 쓰기 메뉴가 열립니다.`),
     el('div',{className:'row-actions',style:'justify-content:center;margin-top:14px'},el('button',{className:'btn',onclick:()=>go(todo)},`다음 단계: ${todo}`)))]:p.r()}
- $('#main').replaceChildren(S.readonly?el('div',{className:'banner'},'원본 저장소에서 열렸습니다. 보기만 되고 저장은 되지 않습니다 — 처음 설정 → 기본 점검에서 "작업공간 만들기"를 누르세요.'):'',head,...body)}
+ $('#main').replaceChildren(S.readonly?el('div',{className:'banner'},'내 작업공간(workspace/)이 아직 없습니다. 보기만 되고 저장은 되지 않습니다 — 처음 설정 → 기본 점검에서 "작업공간 만들기"를 누르세요.'):'',head,...body)}
 async function load(){S=await fetch('/api/state').then(r=>r.json());if(cur===null)cur=nextTodo()||'현황';render()}
 addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
 load();
@@ -1728,7 +1747,7 @@ load();
 
 
 def selftest():
-    global ROOT, TESTS, NOTION_FILE  # 새로 시작: 시험이 통과해야만 설정이 바뀐다(임시 폴더에서)
+    global ROOT, TESTS, NOTION_FILE, DATA, MINE, BACKUP  # 새로 시작: 시험이 통과해야만 설정이 바뀐다(임시 폴더에서)
     keep = ROOT, TESTS, NOTION_FILE
     with tempfile.TemporaryDirectory() as t:
         ROOT = TESTS = pathlib.Path(t); NOTION_FILE = ROOT / "n.json"; d = TESTS / "notion-publisher"; d.mkdir()
@@ -1782,6 +1801,14 @@ def selftest():
     assert md_fields("- 서지: x\n- 결과:\n  - 첫째 (§5.5)\n  - 둘째\n- 저자가 밝힌 한계: 없음") == {"결과": "- 첫째 (§5.5)\n- 둘째", "저자가 밝힌 한계": "없음"}
     assert short_title("A Study: Long Subtitle") == "A Study" and len(short_title("x" * 40)) == 30
     assert author_short(["Ann Lee", "B C"]) == "Lee 외" and author_short(["Ann Lee"]) == "Lee" and author_short([""]) == ""
+    keep = DATA, MINE, BACKUP  # 화면에서 고친 스킬 글은 내 사본에만 쓰고, 원래대로 하면 사본만 지운다(저장소 파일은 그대로)
+    with tempfile.TemporaryDirectory() as t:
+        DATA = pathlib.Path(t); (DATA / "설정").mkdir(); MINE, BACKUP = DATA / "내사본", DATA / "백업"
+        rel = ".claude/skills/paper-scout/SKILL.md"; orig = (ROOT / rel).read_text()
+        assert file_save(rel, orig + "\n내 사본", None)[0] and (MINE / rel).read_text().endswith("내 사본") and (ROOT / rel).read_text() == orig
+        assert file_get(rel)[1]["mine"] and file_get(rel)[1]["text"].endswith("내 사본")
+        assert file_reset(rel)[0] and not (MINE / rel).exists() and not file_reset(rel)[0]
+    DATA, MINE, BACKUP = keep
     print("자체시험 통과")
 
 
@@ -1796,6 +1823,6 @@ if __name__ == "__main__":
         port = int(sys.argv[1]) if len(sys.argv) > 1 else 9008
         url = f"http://127.0.0.1:{port}"
         print(f"매일 논문 v{VERSION} 대시보드: {url}  (끄기: Ctrl+C)")
-        if not os.environ.pop("DASH_REOPEN", None):  # 작업공간으로 바꿔 띄울 때는 열려 있던 창이 다시 읽는다
+        if not os.environ.pop("DASH_REOPEN", None):  # DASH_REOPEN=1이면 브라우저 창을 새로 열지 않는다
             webbrowser.open(url)
         ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

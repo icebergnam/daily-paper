@@ -17,7 +17,8 @@ ponytail: PDF 기준 요약의 숫자는 대조하지 않는다(PDF 글자 추�
 """
 import json, pathlib, re, sys
 
-OUT = pathlib.Path(__file__).resolve().parent.parent / "매일논문"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+OUT = ROOT / "workspace/매일논문"
 ITEMS = ["연구 질문", "방법", "결과", "저자가 밝힌 한계"]
 NUM = re.compile(r"\d+(?:[.,]\d+)*")
 
@@ -109,7 +110,7 @@ def latest_day():
 
 if __name__ == "__main__":
     only = sys.argv[1:2] == ["요약"] and len(sys.argv) == 3
-    day = (OUT.parent / sys.argv[2] if only else OUT / sys.argv[1]) if len(sys.argv) > 1 else latest_day()
+    day = (ROOT / sys.argv[2] if only else OUT / sys.argv[1]) if len(sys.argv) > 1 else latest_day()
     if not day or not (day / "목록.json").exists():
         print("판정할 수 없음: 목록.json이 없습니다")
         sys.exit(2)

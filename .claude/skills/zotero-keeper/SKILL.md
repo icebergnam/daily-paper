@@ -5,7 +5,9 @@ description: 매일 논문의 조테로 저장 담당 업무 매뉴얼. 그날 �
 
 # 조테로 저장 (zotero-keeper)
 
-설정은 `설정/zotero-keeper.json` 하나다.
+> 내 사본: `workspace/내사본/.claude/skills/zotero-keeper/` 아래에 같은 이름의 파일(SKILL.md, references/…)이 있으면 이 저장소 파일 대신 그 파일을 읽고 따른다.
+
+설정은 `workspace/설정/zotero-keeper.json` 하나다.
 
 | 칸 | 뜻 | 기본 |
 |---|---|---|
@@ -26,18 +28,18 @@ Bash로 아래 명령만 **이 글자 그대로**(상대 경로, 앞에 cd나 �
 
 ## 할 일 A · 저장 (메인이 "저장: {날짜 폴더} {ID들}"을 맡길 때)
 
-1. `설정/zotero-keeper.json`의 `사용`이 `false`면 "조테로 사용 안 함"이라고 보고하고 끝낸다.
+1. `workspace/설정/zotero-keeper.json`의 `사용`이 `false`면 "조테로 사용 안 함"이라고 보고하고 끝낸다.
 2. `점검`을 실행한다. ❌가 있어도 멈추지 않고 그 줄을 보고에 옮긴다.
 3. `저장 {날짜 폴더} {ID들}`을 실행한다. 스크립트가 `목록.json`의 `zotero_saved`·`zotero_error`를 고쳐 쓴다.
 
 ## 할 일 B · 시험 (메인이 "시험"을 맡길 때)
 
-설정이 실제로 돌아가는지 본다. paper-scout 시험 후보(`매일논문/시험/paper-scout/`) 중 한 편을 **`시험` 태그를 붙여 실제로 저장**한다(사람이 조테로에서 지워도 된다). 그날 논문 폴더는 건드리지 않는다.
+설정이 실제로 돌아가는지 본다. paper-scout 시험 후보(`workspace/매일논문/시험/paper-scout/`) 중 한 편을 **`시험` 태그를 붙여 실제로 저장**한다(사람이 조테로에서 지워도 된다). 그날 논문 폴더는 건드리지 않는다.
 
 1. `사용`이 `false`면 시험하지 않는다. `결과.json`에 `"통과": true`, 항목 하나 `{"이름": "사용 안 함", "필수": false, "통과": true, "설명": "조테로를 쓰지 않습니다"}`만 쓴다.
 2. `점검`을 실행한다.
-3. 앱이 켜졌고 컬렉션이 있으면 `시험`을 실행한다. 결과는 `매일논문/시험/zotero-keeper/시험저장.json`에 남는다.
-4. `매일논문/시험/zotero-keeper/결과.json`을 쓴다.
+3. 앱이 켜졌고 컬렉션이 있으면 `시험`을 실행한다. 결과는 `workspace/매일논문/시험/zotero-keeper/시험저장.json`에 남는다.
+4. `workspace/매일논문/시험/zotero-keeper/결과.json`을 쓴다.
 
 ```json
 {

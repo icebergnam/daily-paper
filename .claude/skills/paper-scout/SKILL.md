@@ -1,11 +1,13 @@
 ---
 name: paper-scout
-description: 매일 논문의 논문 찾기 담당 업무 매뉴얼. 설정/paper-scout.json의 키워드로 OpenAlex와 Exa에서 최근 논문 후보를 찾고, PDF를 못 받은 논문의 본문을 Exa로 읽어 오고, 설정이 제대로 됐는지 시험한다.
+description: 매일 논문의 논문 찾기 담당 업무 매뉴얼. workspace/설정/paper-scout.json의 키워드로 OpenAlex와 Exa에서 최근 논문 후보를 찾고, PDF를 못 받은 논문의 본문을 Exa로 읽어 오고, 설정이 제대로 됐는지 시험한다.
 ---
 
 # 논문 찾기 (paper-scout)
 
-설정은 `설정/paper-scout.json` 하나다.
+> 내 사본: `workspace/내사본/.claude/skills/paper-scout/` 아래에 같은 이름의 파일(SKILL.md, references/…)이 있으면 이 저장소 파일 대신 그 파일을 읽고 따른다.
+
+설정은 `workspace/설정/paper-scout.json` 하나다.
 
 | 칸 | 뜻 | 기본 |
 |---|---|---|
@@ -21,7 +23,7 @@ description: 매일 논문의 논문 찾기 담당 업무 매뉴얼. 설정/pape
 
 ## 할 일 A · 검색 (메인이 "검색: {폴더}"를 맡길 때)
 
-목표는 **PDF가 있는 관련 논문을 `찾을_편수`(`설정/매일논문.json`)만큼** 모으는 것이다. 그만큼 모이면 더 찾지 않는다.
+목표는 **PDF가 있는 관련 논문을 `찾을_편수`(`workspace/설정/매일논문.json`)만큼** 모으는 것이다. 그만큼 모이면 더 찾지 않는다.
 "PDF 있음"은 OpenAlex 후보의 `pdf_url`이 비어 있지 않거나, Exa 후보의 `oa_url`(PDF 주소)이 있는 것이다. 같은 논문(DOI나 제목이 같음)은 한 번만 센다.
 
 1. OpenAlex 1쪽: Bash로 `python3 .claude/skills/paper-scout/scripts/openalex.py {폴더}`를 **이 글자 그대로**(상대 경로, 앞뒤에 cd·;·&& 같은 것 없이) 실행한다. 폴더는 스크립트가 만들고, 오픈 액세스 논문만 `{폴더}/후보_openalex.json`에 쓴다.
@@ -39,15 +41,15 @@ description: 매일 논문의 논문 찾기 담당 업무 매뉴얼. 설정/pape
 ## 할 일 B · 본문 (메인이 PDF 못 받은 ID를 줄 때)
 
 1. 그 ID의 `url`(없으면 `oa_url`)을 `web_fetch_exa`로 읽는다. maxCharacters는 60000.
-2. 본문(서론·방법·결과 등)이 있으면 `매일논문/{날짜}/{ID}_본문.md`에 그대로 쓴다. 맨 위 한 줄은 `출처: {읽은 주소}`.
+2. 본문(서론·방법·결과 등)이 있으면 `workspace/매일논문/{날짜}/{ID}_본문.md`에 그대로 쓴다. 맨 위 한 줄은 `출처: {읽은 주소}`.
 3. 로그인·구독·결제 화면이거나 초록만 있으면 파일을 쓰지 않는다. 우회하지 않는다.
 
 ## 할 일 C · 시험 (메인이 "시험"을 맡길 때)
 
-설정이 실제로 돌아가는지 본다. 결과는 `매일논문/시험/paper-scout/`에만 쓴다(그날 논문 폴더·seen.txt는 건드리지 않는다).
+설정이 실제로 돌아가는지 본다. 결과는 `workspace/매일논문/시험/paper-scout/`에만 쓴다(그날 논문 폴더·seen.txt는 건드리지 않는다).
 
-1. 할 일 A를 `{폴더}` = `매일논문/시험/paper-scout`로 한다(거르기·셈·다음 쪽까지).
-3. `매일논문/시험/paper-scout/결과.json`을 쓴다.
+1. 할 일 A를 `{폴더}` = `workspace/매일논문/시험/paper-scout`로 한다(거르기·셈·다음 쪽까지).
+3. `workspace/매일논문/시험/paper-scout/결과.json`을 쓴다.
 
 ```json
 {

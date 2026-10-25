@@ -35,7 +35,7 @@ def get(url, data=None):
 
 
 def cfg():
-    return json.loads((ROOT / "설정/매일논문.json").read_text())
+    return json.loads((ROOT / "workspace/설정/매일논문.json").read_text())
 
 
 def holes(agent):
@@ -43,7 +43,7 @@ def holes(agent):
     f = ROOT / f".claude/agents/{agent}.md"
     if AGENT and f.exists():
         check(f"{agent} 커넥터 이름", "_ID__" not in f.read_text(),
-              f"{f.name}에 커넥터 빈칸이 남았습니다. 작업공간 세션에서 Claude에게 '설정해 줘'라고 보내세요.", setup=True)
+              f"{f.name}에 커넥터 빈칸이 남았습니다. 이 저장소 세션에서 Claude에게 '설정해 줘'라고 보내세요.", setup=True)
 
 
 def 기본():
@@ -58,7 +58,9 @@ def 기본():
           "터미널에서 claude auth login. 설치가 안 됐으면 brew install --cask claude-code" if exe else
           "Claude Code를 설치하세요: brew install --cask claude-code (또는 npm install -g @anthropic-ai/claude-code)")
     if not INSTALL:
-        check("작업공간 폴더", not (ROOT / ".git").exists(), "원본 저장소입니다. 대시보드 기본 점검의 '작업공간 만들기'를 누르거나, workspace 폴더에서 세션(또는 대시보드)을 여세요.", setup=True)
+        check("작업공간 폴더(workspace/)", (ROOT / "workspace/설정").is_dir(), "내 설정을 둘 workspace/가 없습니다. 대시보드(python3 scripts/대시보드.py) → 기본 점검에서 '작업공간 만들기'를 누르세요.", setup=True)
+        if (ROOT / "workspace/scripts").exists():  # 1.x 작업공간은 저장소 전체 사본이었다. 지금은 쓰지 않는다
+            print("⚠️  workspace/에 예전(1.x) 코드 사본이 남아 있습니다 — 이제 쓰지 않습니다. 고친 담당·스킬 글이 있으면 workspace/내사본/.claude/…로 옮기고, 설정/·매일논문/·내사본/ 말고는 지워도 됩니다.")
     if AGENT:
         settings = (ROOT / ".claude/settings.json").read_text() if (ROOT / ".claude/settings.json").exists() else ""
         check("판정 루프 훅 등록", "매일논문_루프.py" in settings and (ROOT / "scripts/매일논문_판정.py").exists(),
@@ -69,8 +71,8 @@ def 기본():
 
 def 찾기():
     if not INSTALL:
-        c, s = cfg(), json.loads((ROOT / "설정/paper-scout.json").read_text())
-        check(f"키워드 {s['키워드']}", bool(s["키워드"]), '대시보드 → 논문 찾기에서 영어 키워드를 1개 이상 넣으세요(설정/paper-scout.json).', setup="키워드")
+        c, s = cfg(), json.loads((ROOT / "workspace/설정/paper-scout.json").read_text())
+        check(f"키워드 {s['키워드']}", bool(s["키워드"]), '대시보드 → 논문 찾기에서 영어 키워드를 1개 이상 넣으세요(workspace/설정/paper-scout.json).', setup="키워드")
         check(f"찾을_편수 {c['찾을_편수']}", isinstance(c["찾을_편수"], int) and not isinstance(c["찾을_편수"], bool) and c["찾을_편수"] > 0,
               "찾을_편수는 1 이상의 숫자여야 합니다.", setup="편수")
     try:
@@ -82,10 +84,10 @@ def 찾기():
 
 
 def 조테로():
-    zf = ROOT / "설정/zotero-keeper.json"
+    zf = ROOT / "workspace/설정/zotero-keeper.json"
     z = json.loads(zf.read_text()) if zf.exists() else {"사용": True, "컬렉션": "자동수집"}
     if not INSTALL and not z.get("사용", True):
-        print("➖ 조테로 사용 안 함(설정/zotero-keeper.json) — 선택 담당이라 건너뜁니다")
+        print("➖ 조테로 사용 안 함(workspace/설정/zotero-keeper.json) — 선택 담당이라 건너뜁니다")
         return
     try:
         get(ZOTERO + "ping")
@@ -98,24 +100,24 @@ def 조테로():
 
 def 요약():
     if not INSTALL:
-        rf = ROOT / "설정/paper-reader.json"
+        rf = ROOT / "workspace/설정/paper-reader.json"
         r = json.loads(rf.read_text()) if rf.exists() else {"사용": True, "요약할_편수": 2}
         if not r.get("사용", True):
-            print("➖ 요약 사용 안 함(설정/paper-reader.json) — 선택 담당이라 건너뜁니다")
+            print("➖ 요약 사용 안 함(workspace/설정/paper-reader.json) — 선택 담당이라 건너뜁니다")
             return
         n, m = cfg()["찾을_편수"], r["요약할_편수"]
         check(f"요약할_편수 {m}", isinstance(m, int) and not isinstance(m, bool) and 0 < m <= (n if isinstance(n, int) else 0),
-              "설정/paper-reader.json의 요약할_편수는 1 이상이고 찾을_편수 이하인 숫자여야 합니다.", setup="편수")
+              "workspace/설정/paper-reader.json의 요약할_편수는 1 이상이고 찾을_편수 이하인 숫자여야 합니다.", setup="편수")
 
 
 def 노션():
     if not INSTALL:
-        info = (ROOT / "설정/연구자_정보.md").read_text()
+        info = (ROOT / "workspace/설정/연구자_정보.md").read_text()
         blank = [line for line in info.splitlines() if line.startswith("- ") and line.rstrip().endswith(":")]
         check("넣으면 안 되는 자료(privacy-guard)", not blank, "대시보드 설정 → 넣으면 안 되는 자료를 채우세요. 모르면 '모름'.", setup="연구자 정보")
-        nf = ROOT / "설정/notion-publisher.json"
+        nf = ROOT / "workspace/설정/notion-publisher.json"
         check("노션 아카이브(notion_db_url)", bool(json.loads(nf.read_text()).get("notion_db_url") if nf.exists() else ""),
-              "대시보드 → 노션 올리기에서 페이지 주소를 넣고 새로 시작하세요(설정/notion-publisher.json).", setup=True)
+              "대시보드 → 노션 올리기에서 페이지 주소를 넣고 새로 시작하세요(workspace/설정/notion-publisher.json).", setup=True)
     holes("notion-publisher")
 
 
