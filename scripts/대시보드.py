@@ -953,7 +953,7 @@ const FRESH_KEYS={'paper-scout':['키워드'],'zotero-keeper':['컬렉션'],'pap
 const infoFilled=()=>{const m=S.info.match(NOGO);return !!(m&&m[1].trim())};
 // 시험 카드에 담당마다 붙이는 한 줄: 밖에 실제로 쓰는 담당은 무엇을 쓰는지 알린다
 const TEST_NOTE={'zotero-keeper':"조테로에 '시험' 태그를 붙인 논문 한 편을 실제로 저장합니다(지워도 됩니다).",
- 'notion-publisher':"노션 아카이브에 '[시험]'으로 시작하는 줄 한 편을 실제로 올립니다(지워도 됩니다). 표지는 바꾸지 않습니다.",
+ 'notion-publisher':"노션 아카이브에 '[시험]'으로 시작하는 줄 한 편을 실제로 올립니다(지워도 됩니다). 표지는 바꾸지 않습니다. 아카이브에 없는 칸(짧은 제목·호·상태·머리기사·근거)과 논문 서점 보기(이번 주 신간·키워드별 서가·읽기 상태별)가 없으면 더합니다.",
  'privacy-guard':'앞 담당의 실제 결과는 통과시키고, 일부러 넣은 가짜 민감 자료는 막는지 봅니다.'};
 const testFresh=(n,cfg)=>{const r=S.tests[n];return !!r&&(FRESH_KEYS[n]||[]).every(k=>JSON.stringify(r[k])===JSON.stringify(cfg[k]))};
 const testOk=(n,cfg)=>!!(S.tests[n]&&S.tests[n].통과)&&testFresh(n,cfg);
@@ -1290,7 +1290,7 @@ function startCard(){const u=el('input',{id:'np',type:'url',placeholder:'https:/
   if(!isNotion(v))return out.replaceChildren(badBox('노션 페이지 주소를 넣어 주세요. 노션에서 페이지 오른쪽 위 ··· → 링크 복사'));
   btn.disabled=true;const r=await post('/api/agent/test',{name:'notion-publisher',task:`새로 시작: ${v}`+(ow.checked?' 덮어쓰기 허락':'')}).catch(e=>({ok:false,msg:String(e)}));
   btn.disabled=false;if(!r.ok)return out.replaceChildren(badBox(r.msg));toast('notion-publisher가 노션을 꾸미고 시험합니다 · 통과하면 지금 쓰는 노션이 바뀝니다');await load()}},'새로 시작');
- return card(S.notion.notion_url?'다른 페이지로 새로 시작':'노션 새로 시작','빈 페이지를 하나 만들고 오른쪽 위 ··· → 링크 복사. notion-publisher가 그 안에 논문 아카이브(11칸)와 창간 준비호 표지를 만들고, 이어서 시험 실행까지 합니다. 시험이 통과하면 지금 쓰는 노션(표지·논문 아카이브 주소)이 새 페이지로 바뀌고, 실패하면 그대로입니다. 전에 쓰던 페이지는 그대로 남습니다.',
+ return card(S.notion.notion_url?'다른 페이지로 새로 시작':'노션 새로 시작','빈 페이지를 하나 만들고 오른쪽 위 ··· → 링크 복사. notion-publisher가 그 안에 논문 아카이브(16칸, 논문 서점 보기 포함)와 창간 준비호 표지를 만들고, 이어서 시험 실행까지 합니다. 시험이 통과하면 지금 쓰는 노션(표지·논문 아카이브 주소)이 새 페이지로 바뀌고, 실패하면 그대로입니다. 전에 쓰던 페이지는 그대로 남습니다.',
   el('div',{className:'row-actions'},u,btn),
   el('label',{htmlFor:'now',style:'display:flex;gap:8px;align-items:center;margin-top:10px'},ow,'페이지에 다른 내용이 있어도 표지로 덮어써도 됩니다'),
   el('div',{className:'help'},'Notion 커넥터(claude.ai → 설정 → 커넥터)가 이 페이지에 접근할 수 있어야 합니다.'),out)}
