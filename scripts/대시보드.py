@@ -195,6 +195,8 @@ def library_data():
     kws = list(dict.fromkeys([*(read_json(SCOUT_FILE, {}).get("키워드") or []), *(p["kw"] for p in papers if p["kw"])]))
     issues = dict(sorted({(p["issue"], p["date"][5:].replace("-", ".")) for p in papers}, reverse=True))
     return {"papers": papers, "keywords": kws, "issues": [{"no": n, "date": dt} for n, dt in issues.items()],
+            "days": {d.name: {"found": sum(len(read_json(d / f"후보_{s}.json", [])) for s in ("openalex", "exa")), "notion": (d / "노션완료.txt").exists()}
+                     for d in OUT.glob("20*") if (d / "목록.json").exists()},  # 오늘 호 신문의 검색 수·발행 여부
             "synced": time.strftime("%m.%d %H:%M", time.localtime(LIB_FILE.stat().st_mtime)) if lib else "", "sync": library_sync_status()}
 
 
@@ -1087,6 +1089,39 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--surface2);border
 .lib :focus-visible{outline:2px solid var(--red);outline-offset:2px}
 @media (max-width:640px){.lib{padding:16px}.lib-top h2{font-size:30px}.desk{padding:0}.desk-l{position:static;text-align:left;margin-bottom:6px}.flat{max-width:100%}.case{padding:18px 12px 4px}.drawer{padding:24px 18px 32px}}
 @media (prefers-reduced-motion:reduce){.lib *,.drawer{animation:none!important;transition:none!important}}
+/* 오늘 호(신문 판형)와 읽기 모드 */
+.np-title{font-size:56px!important}
+.np-sub{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--ink2);padding:10px 0;border-bottom:1px solid var(--rule)}.np-sub b{color:var(--red);font-weight:600}
+.pipe{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--rule);border:1px solid var(--ink);margin:26px 0 30px}
+.pipe-s{background:var(--paper);padding:14px 14px 16px}.pipe-s .ix{font:500 11px var(--mono);color:var(--ink3)}
+.pipe-s .k{font:700 16px var(--serif);margin:6px 0 2px}.pipe-s .d{font-size:12px;line-height:1.4;min-height:34px;color:var(--ink2)}
+.pipe-s .n{font:700 26px var(--mono);margin-top:10px;letter-spacing:-.02em}.pipe-s.pending .n{color:var(--rule)}
+.np-cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:40px}
+.np-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-bottom:1px solid var(--ink);padding-bottom:6px;margin-bottom:16px}
+.np-h h3{margin:0;font:700 13px var(--mono);letter-spacing:.08em;text-transform:uppercase}.np-h span,.np-h button{font:12px var(--mono);color:var(--ink3);background:none;border:none;padding:0}
+.np-h button{text-decoration:underline;cursor:pointer}
+.lead .kwtag{font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.lead h2{font:700 34px/1.22 var(--serif);margin:8px 0 16px;letter-spacing:-.02em;text-wrap:balance}
+.lead .tldr{font:400 19px/1.65 var(--serif);border-left:3px solid var(--ink);padding-left:18px;margin:0 0 14px}.lead .tldr.cand{font-style:italic;color:var(--ink3);border-color:#d9b65a}
+.lib mark{background:#fbe3d7;color:inherit;padding:0 2px}
+.more{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--ink);margin-top:30px}
+.more article{padding:18px 20px;border-bottom:1px solid var(--rule);cursor:pointer}.more article:nth-child(even){border-left:1px solid var(--rule)}
+.more article:hover h4{text-decoration:underline}.np-k{display:flex;gap:8px;align-items:center;font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.more h4{font:700 18px/1.35 var(--serif);margin:6px 0 8px;text-wrap:balance}
+.more p{font:15px/1.6 var(--serif);color:var(--ink2);margin:0 0 8px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}.more p.cand{font-style:italic;color:var(--ink3)}
+.np-side>div{margin-bottom:34px}
+.np-arch{display:flex;flex-direction:column}
+.np-arch button{display:flex;justify-content:space-between;background:none;border:none;border-bottom:1px solid var(--rule);padding:10px 2px;cursor:pointer;color:var(--ink);text-align:left}
+.np-arch button b{font:700 14px var(--mono)}.np-arch button span{color:var(--ink3);font:12px var(--mono)}.np-arch button[aria-current=true]{background:var(--paper2)}
+.np-shelf{display:flex;align-items:flex-end;gap:3px;background:#3a2a1d;padding:14px 10px 0;border-radius:4px 4px 0 0;overflow:hidden}
+.np-shelf .spine{width:26px}.np-shelf .spine .sp-t{font-size:10px}.np-wood{height:10px;background:linear-gradient(#a8784a,#7c5530);border-radius:0 0 4px 4px}
+.read-btn{background:var(--ink);color:var(--paper);border:none;border-radius:999px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap}
+.lib-acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+body.reading{background:#F5F1E8}body.reading .app{grid-template-columns:minmax(0,1fr)}
+body.reading .app>aside,body.reading .head,body.reading .banner{display:none}
+body.reading main{max-width:1240px;padding:24px 32px 80px}body.reading .lib{box-shadow:none}
+@media (max-width:900px){.np-cols{grid-template-columns:1fr}.pipe{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:640px){.np-title{font-size:36px!important}.lead h2{font-size:26px}.more{grid-template-columns:1fr}.more article:nth-child(even){border-left:none}.pipe{grid-template-columns:repeat(2,1fr)}body.reading main{padding:12px}}
 </style></head><body>
 <div class="app"><aside>
  <div class="brand"><span class="mark">DP</span><div><b>매일 논문</b><small>The Daily Paper 관리</small></div></div>
@@ -1101,6 +1136,7 @@ const ICONS={
  '담당 에이전트':'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
  '파일':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
  'DB 합치기':'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>',
+ '오늘 호':'<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/>',
  '논문 서재':'<path d="M4 4h4v16H4zM10 4h4v16h-4z"/><path d="m16.5 5 3.8-1 3 15.4-3.8 1z"/>',
  '조테로':'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'};
 const icon=n=>{const s=document.createElement('span');s.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>`;return s.firstChild};
@@ -1151,7 +1187,7 @@ const testOk=(n,cfg)=>!!(S.tests[n]&&S.tests[n].통과)&&testFresh(n,cfg);
 const testWhy=(n,cfg)=>{const r=S.tests[n];return !r?`아직 ${n} 시험을 하지 않았습니다. 아래 "시험 실행"을 누르세요.`:!testFresh(n,cfg)?'설정이 시험 뒤에 바뀌었습니다. 다시 시험하세요.'
  :!r.통과?'시험 실패:\n'+(r.항목||[]).filter(x=>!x.통과&&x.필수!==false).map(x=>`${x.이름}: ${x.설명||''}`).join('\n')+(r.제안?'\n제안: '+r.제안:''):''};
 const badLines=out=>(out||'').split('\n').filter((l,i,a)=>/^(❌|⛔)/.test(l.trim())||(/^\s*→/.test(l)&&/^❌/.test((a[i-1]||'').trim()))).join('\n');
-const DAILY=['현황','논문 서재','실행 기록','조테로'],EXTRA=['파일','담당 에이전트','DB 합치기'],ALWAYS_OPEN=['파일'];  // 파일은 처음 설정 중에도 연다(스킬을 고치며 설정)
+const DAILY=['현황','오늘 호','논문 서재','실행 기록','조테로'],EXTRA=['파일','담당 에이전트','DB 합치기'],ALWAYS_OPEN=['파일'];  // 파일은 처음 설정 중에도 연다(스킬을 고치며 설정)
 const stepIdx=k=>STEPS.findIndex(s=>s.k===k);
 const lockedBy=k=>{const i=stepIdx(k);const s=i<0?null:STEPS.slice(0,i).find(s=>!s.done());return s?s.k:null};
 const nextTodo=()=>(STEPS.find(s=>!s.done())||{}).k;  // 처음으로 안 끝난 단계. 그 뒤 단계는 모두 잠긴다
@@ -1311,24 +1347,25 @@ const tipOff=()=>{if(TIP)TIP.remove();TIP=null};
 // 책 하나를 누를 수 있게(마우스·키보드): 누르면 서랍, 올리면 말풍선
 const bookBtn=(node,p)=>{Object.assign(node,{tabIndex:0,onclick:()=>openBook(p),onkeydown:e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openBook(p)}},
  onmouseenter:e=>tipOn(e,p),onmouseleave:tipOff,onfocus:e=>tipOn(e,p),onblur:tipOff});node.setAttribute('role','button');node.setAttribute('aria-label',p.title);return node};
+const link=(cls,href,...kids)=>href?el('a',{className:cls,href,target:'_blank',rel:'noopener'},...kids):null;
+const bookChips=p=>el('div',{className:'lchips'},stTag(p.status),p.zotero?el('span',{className:'lchip ok'},'✓ 조테로 저장'):null,p.oa?el('span',{className:'lchip'},'오픈 액세스'):null,
+ ...p.ev.map(e=>el('span',{className:'lchip ev'},'근거 '+e)));
+const bookTable=p=>p.table.length?el('table',{className:'stable'},el('tbody',{},...p.table.map(([a,b])=>el('tr',{},el('td',{},a),el('td',{},...hl(b)))))):null;
+const bookLinks=p=>el('div',{className:'dr-actions'},link('nl',p.notion,el('span',{className:'nl-ic'},'N'),'노션 페이지 열기'),link('',p.oa,'원문 PDF'),link('',p.url,'DOI · 출처'));
 function openBook(p){tipOff();const back=document.activeElement;
  const close=()=>{veil.remove();dr.remove();removeEventListener('keydown',esc);if(back)back.focus()},esc=e=>{if(e.key==='Escape')close()};
  const veil=el('div',{className:'dr-veil',onclick:close}),x=el('button',{className:'dr-x',onclick:close},'닫기 ✕');
- const link=(cls,href,...kids)=>href?el('a',{className:cls,href,target:'_blank',rel:'noopener'},...kids):null;
  const dr=el('aside',{className:'lib drawer',role:'dialog',ariaModal:'true',ariaLabel:p.title},x,el('div',{className:'dr-cover'},bookCover(p)),
   el('div',{className:'dr-k',style:`color:${kwColor(p.kw)}`},`${p.kw} · NO.${nos(p.issue)}`),el('h2',{className:'dr-t'},p.title),
   el('div',{className:'dr-by'},el('b',{},p.authors),` — ${p.year||''} · ${p.venue}`),
-  el('div',{className:'lchips'},stTag(p.status),p.zotero?el('span',{className:'lchip ok'},'✓ 조테로 저장'):null,p.oa?el('span',{className:'lchip'},'오픈 액세스'):null,
-   ...p.ev.map(e=>el('span',{className:'lchip ev'},'근거 '+e))),
-  p.tldr?el('p',{className:'dr-tldr'+(p.status==='후보'?' cand':'')},p.tldr):null,
-  p.table.length?el('table',{className:'stable'},el('tbody',{},...p.table.map(([a,b])=>el('tr',{},el('td',{},a),el('td',{},b))))):null,
-  el('div',{className:'dr-actions'},link('nl',p.notion,el('span',{className:'nl-ic'},'N'),'노션 페이지 열기'),link('',p.oa,'원문 PDF'),link('',p.url,'DOI · 출처')),
+  bookChips(p),p.tldr?el('p',{className:'dr-tldr'+(p.status==='후보'?' cand':'')},p.tldr):null,bookTable(p),bookLinks(p),
   p.notion?null:el('p',{className:'desc',style:'margin-top:10px'},'노션 페이지 주소는 "노션과 동기화" 뒤에 생깁니다.'));
  addEventListener('keydown',esc);document.body.append(veil,dr);x.focus()}
 function libPage(){const root=el('div',{className:'lib'});
  const draw=()=>{const D=LIB.d,q=LIB.q.toLowerCase(),sy=D.sync||{};
   const papers=D.papers.filter(p=>!q||[p.title,p.authors,p.venue,p.tldr].join(' ').toLowerCase().includes(q)),reading=papers.filter(p=>p.status==='읽는 중');
-  const groups=LIB.group==='kw'?D.keywords.map(k=>({id:k,label:k,color:kwColor(k),items:papers.filter(p=>p.kw===k)}))
+  const top=Math.max(0,...D.papers.map(p=>p.issue));
+  const groups=LIB.group==='new'?[{id:'new',label:`NO.${nos(top)} 신간`,color:'#B4472F',items:papers.filter(p=>p.isNew)}]:LIB.group==='kw'?D.keywords.map(k=>({id:k,label:k,color:kwColor(k),items:papers.filter(p=>p.kw===k)}))
    :LIB.group==='status'?['후보','읽는 중','요약 완료'].map(s=>({id:s,label:s,color:ST_COLOR[s],items:papers.filter(p=>p.status===s)}))
    :D.issues.map(i=>({id:'i'+i.no,label:`NO.${nos(i.no)} · ${i.date}`,color:'#1F1B16',items:papers.filter(p=>p.issue===i.no)}));
   const sync=el('button',{className:'lib-run'+(sy.running?' busy':''),disabled:!!sy.running||S.readonly,onclick:async()=>{
@@ -1337,7 +1374,7 @@ function libPage(){const root=el('div',{className:'lib'});
   const search=el('input',{type:'search',value:LIB.q,placeholder:'제목 · 저자 · 저널 · 요약에서 찾기',ariaLabel:'서재 검색',oninput:e=>{LIB.q=e.target.value;draw();const s=root.querySelector('.lib-search input');s.focus();s.setSelectionRange(s.value.length,s.value.length)}});
   const shelves=sy.running?el('section',{className:'case',ariaBusy:'true'},...[0,1,2].map(s=>el('div',{className:'shelf'},el('div',{className:'shelf-tag',style:'opacity:.4'},'불러오는 중'),
     el('div',{className:'shelf-row'},...Array.from({length:9},(_,i)=>el('div',{className:'lb-ghost shimmer',style:`height:${150+hashN('s'+s+i,40)}px`}))),el('div',{className:'board'}))))
-   :LIB.mode==='case'?el('section',{className:'case'},...groups.map(g=>{const face=g.items.filter(p=>p.isNew).slice(0,2),spines=g.items.filter(p=>!face.includes(p));
+   :LIB.mode==='case'?el('section',{className:'case'},...groups.map(g=>{const face=LIB.group==='new'?g.items:g.items.filter(p=>p.isNew).slice(0,2),spines=g.items.filter(p=>!face.includes(p));
     return el('div',{className:'shelf'},el('div',{className:'shelf-tag'},el('span',{className:'kw-dot',style:`background:${g.color}`}),g.label,el('b',{},String(g.items.length))),
      el('div',{className:'shelf-row'},g.items.length?null:el('div',{className:'shelf-empty'},'아직 꽂힌 논문이 없습니다'),
       ...face.map(p=>bookBtn(el('div',{className:'face-out'},bookCover(p),el('span',{className:'nb'},'NEW')),p)),
@@ -1350,9 +1387,9 @@ function libPage(){const root=el('div',{className:'lib'});
     el('div',{className:'cover-grid'},...g.items.map(p=>bookBtn(el('div',{className:'cg-item'},el('div',{className:'cg-stage'},bookCover(p),p.isNew?el('span',{className:'nb'},'NEW'):null),
      el('div',{className:'cg-t'},p.title),el('div',{className:'cg-m'},`${p.authorShort} · NO.${nos(p.issue)}`,stTag(p.status))),p))))));
   root.replaceChildren(...[el('div',{className:'lib-top'},el('div',{},el('div',{className:'lib-meta'},el('span',{},'LIBRARY'),el('span',{},'노션 · 논문 아카이브'),el('span',{},D.papers.length+'권')),
-    el('h2',{},'논문 ',el('em',{},'서재'))),el('div',{className:'lib-sync'},sync,el('small',{},D.synced?`마지막 동기화 · ${D.synced}`:'아직 동기화하지 않음 · 로컬 기록으로 보는 중'))),
+    el('h2',{},'논문 ',el('em',{},'서재'))),el('div',{className:'lib-sync'},el('div',{className:'lib-acts'},readBtn(),sync),el('small',{},D.synced?`마지막 동기화 · ${D.synced}`:'아직 동기화하지 않음 · 로컬 기록으로 보는 중'))),
    el('div',{className:'lib-bar'},el('label',{className:'lib-search'},el('span',{ariaHidden:'true'},'⌕'),search),
-    seg('group',[['kw','키워드별'],['status','읽기 상태별'],['issue','호별']]),seg('mode',[['case','책장'],['grid','표지']])),
+    seg('group',[['new','신간 매대'],['kw','키워드별'],['status','읽기 상태별'],['issue','호별']]),seg('mode',[['case','책장'],['grid','표지']])),
    !sy.running&&sy.error?el('div',{className:'lib-err',role:'alert'},'동기화 실패: '+sy.error):null,
    LIB.group==='kw'&&reading.length&&!sy.running?el('section',{className:'desk'},el('div',{className:'desk-l'},el('b',{},'책상 위'),el('span',{},`읽는 중 ${reading.length}권`)),
     el('div',{className:'stack'},...reading.map((p,i)=>{const c=pal(p);return bookBtn(el('div',{className:'flat',style:`background:${c.bg};color:${c.fg};width:${300-i*18}px;margin-left:${i*14}px`},
@@ -1362,6 +1399,51 @@ function libPage(){const root=el('div',{className:'lib'});
  const fetchLib=async()=>{LIB.d=await fetch('/api/library').then(r=>r.json());if(!root.isConnected&&LIB.d.sync.running)return;draw();
   clearTimeout(LIB.t);if(LIB.d.sync.running)LIB.t=setTimeout(fetchLib,2000)};
  root.append(waitBox('서재를 여는 중…'));fetchLib();return root}
+// 읽기 모드: 메뉴를 접고 신문·서재를 전체 화면으로 펼친다(Esc나 버튼으로 끝냄)
+let READING=false;
+function setReading(on){READING=on;document.body.classList.toggle('reading',on);
+ try{if(on&&!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else if(!on&&document.fullscreenElement)document.exitFullscreen().catch(()=>{})}catch(e){}
+ document.querySelectorAll('.read-btn').forEach(b=>{b.textContent=on?'읽기 모드 끝내기 ✕':'⤢ 읽기 모드';b.ariaPressed=String(on)})}
+addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&READING)setReading(false)});
+addEventListener('keydown',e=>{if(e.key==='Escape'&&READING&&!document.querySelector('.drawer'))setReading(false)});
+const readBtn=()=>el('button',{className:'read-btn',type:'button',ariaPressed:String(READING),onclick:()=>setReading(!READING)},READING?'읽기 모드 끝내기 ✕':'⤢ 읽기 모드');
+// 오늘 호: 가장 최근 호(또는 고른 지난 호)를 신문 판형으로(디자인 dashboard.jsx). 머리기사는 요약한 논문 중 첫 편, 다른 기사를 누르면 머리기사로
+const hl=s=>String(s||'').split(/(β\s?=\s?−?[\d.]+|R²\s?=\s?[\d.]+|p\s?[<=]\s?[\d.]+|AUC\s?[\d.]+|\d[\d.]*%)/).map((x,i)=>i%2?el('mark',{},x):x);
+const NP={sel:null,issue:null};
+function newsPage(){const root=el('div',{className:'lib news'});
+ const draw=()=>{const D=LIB.d;
+  if(!D.papers.length)return root.replaceChildren(el('div',{className:'lib-none'},'아직 나온 호가 없습니다. 현황에서 "지금 논문 찾기"를 하면 첫 호가 나옵니다.'));
+  const iss=D.issues.find(i=>i.no===NP.issue)||D.issues[0],today=D.papers.filter(p=>p.issue===iss.no);
+  const lead=today.find(p=>p.id===NP.sel)||today.find(p=>p.status!=='후보')||today[0];
+  const date=today[0].date||'',day=D.days[date]||{},n=f=>today.filter(f).length,kws=[...new Set(today.map(p=>p.kw).filter(Boolean))];
+  const steps=[['검색',`OpenAlex·Exa 최근 ${S.scout.기간_일||30}일`,day.found],['거르기','이름만 같은 다른 분야 제외',today.length],
+   ['PDF·조테로','오픈 액세스 원문 저장',n(p=>p.zotero)],['요약','원문 근거와 함께',n(p=>p.status!=='후보')],['노션 신문','그날 호 발행',day.notion||D.synced&&today.some(p=>p.notion)?'NO.'+nos(iss.no):null]];
+  const pick=p=>{NP.sel=p.id;draw();root.scrollIntoView({behavior:'smooth'})};
+  const shelf=[...D.papers].sort((a,b)=>b.issue-a.issue).slice(0,10);
+  root.replaceChildren(
+   el('header',{className:'lib-top'},el('div',{},el('div',{className:'lib-meta'},el('span',{},'NO.'+nos(iss.no)),date?el('span',{},`${date.slice(0,4)}년 ${longDate(date)}`):'',el('span',{},'OpenAlex · Exa')),
+     el('h2',{className:'np-title'},iss===D.issues[0]?'오늘의 ':'지난 호 · ',el('em',{},'논문'),' 신문')),
+    el('div',{className:'lib-sync'},readBtn(),el('small',{},S.schedule?`다음 자동 발행 · 매일 ${S.schedule}`:'매일 예약 꺼짐'))),
+   el('div',{className:'np-sub'},el('span',{},'키워드 ',...kws.flatMap((k,i)=>[i?' · ':'',el('b',{},k)])),
+    el('span',{},`수집 ${today.length} · 요약 ${n(p=>p.status!=='후보')} · 조테로 ${n(p=>p.zotero)} · 오픈 액세스 ${n(p=>p.oa)}`)),
+   el('section',{className:'pipe',ariaLabel:'그날 실행 단계'},...steps.map(([k,d,v],i)=>el('div',{className:'pipe-s'+(v==null?' pending':'')},
+    el('div',{className:'ix'},'0'+(i+1)),el('div',{className:'k'},k),el('div',{className:'d'},d),el('div',{className:'n'},v==null?'—':String(v))))),
+   el('div',{className:'np-cols'},el('div',{},el('div',{className:'np-h'},el('h3',{},'머리기사'),el('span',{},lead.kw)),
+     el('article',{className:'lead'},el('div',{className:'kwtag',style:`color:${kwColor(lead.kw)}`},lead.kw),el('h2',{},lead.title),
+      lead.tldr?el('p',{className:'tldr'+(lead.status==='후보'?' cand':'')},...hl(lead.tldr)):null,
+      el('div',{className:'dr-by'},el('b',{},lead.authors),` — ${lead.year||''} · ${lead.venue}`),bookChips(lead),bookTable(lead),bookLinks(lead)),
+     today.length>1?el('div',{className:'more'},...today.filter(p=>p!==lead).map(p=>el('article',{tabIndex:0,role:'button',onclick:()=>pick(p),onkeydown:e=>{if(e.key==='Enter')pick(p)}},
+      el('div',{className:'np-k'},el('span',{style:`color:${kwColor(p.kw)}`},p.kw),stTag(p.status)),el('h4',{},p.title),
+      el('p',{className:p.status==='후보'?'cand':''},p.tldr),el('div',{className:'dr-by'},[p.authorShort,p.venue].filter(Boolean).join(' · '))))):null),
+    el('aside',{className:'np-side'},
+     el('div',{},el('div',{className:'np-h'},el('h3',{},'지난 호'),el('span',{},D.issues.length+'호')),
+      el('div',{className:'np-arch'},...D.issues.map(i=>el('button',{type:'button',ariaCurrent:String(i===iss),onclick:()=>{NP.issue=i.no;NP.sel=null;draw()}},
+       el('b',{},'NO.'+nos(i.no)),el('span',{},`${i.date} · ${D.papers.filter(p=>p.issue===i.no).length}편`))))),
+     el('div',{},el('div',{className:'np-h'},el('h3',{},'최근 서가'),el('button',{type:'button',onclick:()=>go('논문 서재')},'전체 보기')),
+      el('div',{className:'np-shelf'},...shelf.map((p,i)=>{const c=pal(p);return bookBtn(el('div',{className:'spine',style:`height:${110+(i*37%40)}px;background:${c.bg};color:${c.fg}`},
+       el('span',{className:'sp-t'},p.short)),p)})),el('div',{className:'np-wood'})))))};
+ root.append(waitBox('신문을 펴는 중…'));
+ fetch('/api/library').then(r=>r.json()).then(d=>{LIB.d=d;draw()});return root}
 const PAGES={
  'Claude Code 로그인':{r(){const d=S.checks.claude||{},again=el('button',{className:'btn ghost',type:'button',onclick:async()=>{again.disabled=true;await post('/api/claude',{});await load()}},'다시 확인');
   return [card('이 컴퓨터의 Claude Code',d.at?`${d.at}에 확인`:'',
@@ -1441,6 +1523,7 @@ const PAGES={
     d.stopped?el('p',{className:'desc',style:'color:var(--bad)'},'멈춤 이유: '+d.stopped):null,
     d.fails.length?el('details',{},el('summary',{},`판정 실패 ${d.fails.length}개 보기`),el('pre',{},d.fails.join('\n'))):null)})}},
 
+ '오늘 호':{t:'오늘의 논문 신문',d:'가장 최근 호를 신문 판형으로 봅니다. 다른 기사를 누르면 머리기사로 올라오고, 지난 호도 펼쳐 볼 수 있습니다. "읽기 모드"는 메뉴를 접고 전체 화면으로 펼칩니다.',r(){return [newsPage()]}},
  '논문 서재':{t:'논문 서재',d:'노션 아카이브에 쌓인 논문을 책장으로 봅니다. 로컬 매일 기록으로 그리고, "노션과 동기화"를 누르면 notion-publisher가 아카이브를 읽어 읽기 상태·노션 링크를 맞춥니다(노션은 읽기만).',r(){return [libPage()]}},
  '조테로':{t:'조테로',d:'조테로 보관함을 둘러봅니다. 읽기만 하고 고치지 않습니다.',r(){
   const side=el('div',{className:'zside'}),list=el('div'),q=el('input',{type:'search',placeholder:'제목·저자·연도로 찾기',value:Z.q,ariaLabel:'조테로 검색',style:'flex:1;width:auto;min-width:0'});
@@ -1610,6 +1693,7 @@ function scheduleCard(){const at=el('input',{type:'time',value:S.schedule||'08:0
 function go(t){if(dirty&&t!==cur&&!confirm('저장하지 않은 변경이 있습니다. 떠날까요?'))return;dirty=false;cur=t;render();scrollTo(0,0)}
 let SETUP_OPEN=null;  // 처음 설정 묶음: 다 끝나면 접고, 눌러서 다시 펼 수 있다
 function render(){
+ if(READING&&!['오늘 호','논문 서재'].includes(cur))setReading(false);
  const tab=(t,...label)=>el('button',{role:'tab',ariaSelected:String(t===cur),onclick:()=>go(t)},...label);
  const todo=nextTodo(),doneN=todo?stepIdx(todo):STEPS.length;if(SETUP_OPEN===null||todo)SETUP_OPEN=SETUP_OPEN||!!todo;
  const daily=t=>{const lk=todo&&!ALWAYS_OPEN.includes(t),b=tab(t,lk?el('span',{className:'num'},'🔒'):icon(t),t);if(lk)b.classList.add('locked');return b};
