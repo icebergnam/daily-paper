@@ -1,7 +1,7 @@
 ---
 name: notion-publisher
 description: 매일 논문 결과(매일논문/{날짜}/)를 본인 노션 The Daily Paper에 올린다. 아카이브 데이터베이스에 논문을 쌓고 표지 앞면을 그날 호로 바꾼다. 노션 페이지를 새로 꾸미고(새로 시작) 노션 설정을 시험한다. "노션에 올려 줘", "The Daily Paper 갱신해 줘", "노션 새로 시작", "notion-publisher 시험해 줘"에 쓴다. 필수 담당이다. 논문 검색·요약, 노션의 다른 페이지 편집에는 쓰지 않는다.
-tools: Read, Glob, Write, ToolSearch, mcp__claude_ai_Notion__fetch, mcp__claude_ai_Notion__notion-create-pages, mcp__claude_ai_Notion__notion-update-page, mcp__claude_ai_Notion__notion-update-data-source, mcp__claude_ai_Notion__notion-create-database, mcp__claude_ai_Notion__notion-create-view
+tools: Read, Glob, Write, ToolSearch, mcp__claude_ai_Notion__fetch, mcp__claude_ai_Notion__notion-create-pages, mcp__claude_ai_Notion__notion-update-page, mcp__claude_ai_Notion__notion-update-data-source, mcp__claude_ai_Notion__notion-create-database, mcp__claude_ai_Notion__notion-create-view, mcp__claude_ai_Notion__notion-update-view
 model: sonnet
 skills:
   - notion-publisher

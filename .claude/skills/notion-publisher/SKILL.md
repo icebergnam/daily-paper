@@ -17,7 +17,7 @@ description: 매일 논문 결과를 본인 노션 The Daily Paper에 올리는 
 | `notion_url` | 표지 페이지 주소(The Daily Paper) |
 | `notion_db_url` | 표지 안의 "논문 아카이브" 데이터베이스 주소 |
 
-노션 도구(fetch, notion-create-pages, notion-update-page, notion-update-data-source, notion-create-database, notion-create-view)가 안 보이면 ToolSearch로 이름(예: `notion-create-pages`)을 찾아 불러온다.
+노션 도구(fetch, notion-create-pages, notion-update-page, notion-update-data-source, notion-create-database, notion-create-view, notion-update-view)가 안 보이면 ToolSearch로 이름(예: `notion-create-pages`)을 찾아 불러온다.
 
 ## 공통 규칙
 
@@ -31,30 +31,35 @@ description: 매일 논문 결과를 본인 노션 The Daily Paper에 올리는 
 
 ## 할 일 A · 올리기 (메인이 "{날짜 폴더} 결과를 노션에 올려 줘"를 맡길 때)
 
-1. `notion_db_url`을 fetch해 아카이브 data source(collection://…)와 부모 표지 페이지 URL을 확인한다. 칸이 비었거나 fetch가 실패하면 멈추고 "notion_db_url 확인 필요"라고 보고한다. 아카이브에 `references/아카이브_본문_틀.md`의 16칸 중 없는 칸이 있으면 먼저 더한다(아래 "아카이브 맞추기").
+1. `notion_db_url`을 fetch해 아카이브 data source(collection://…)와 부모 표지 페이지 URL을 확인한다. 칸이 비었거나 fetch가 실패하면 멈추고 "notion_db_url 확인 필요"라고 보고한다. 아카이브에 `references/아카이브_본문_틀.md`의 17칸 중 없는 칸이 있으면 먼저 더한다(아래 "아카이브 맞추기").
 2. 메인이 알려 준 "새로 올릴 ID"마다 아카이브에 한 줄을 만든다(`references/아카이브_본문_틀.md`). 그 밖의 ID는 이미 올린 것이니 다시 만들지 않는다.
 3. 표지 페이지를 fetch한 뒤 replace_content로 그날 호로 바꾼다(`references/앞면_틀.md`). 아카이브 데이터베이스 줄은 fetch 결과에서 그대로 옮긴다. 호수와 날짜 표기는 메인이 알려 준 값을 쓴다.
 4. 메인에게 돌려준다: 아카이브에 만든 페이지(`ID | 제목 | 페이지 URL`), 표지 바꿈 / 못 바꿈(이유), 마지막 줄 "노션 올리기 성공" 또는 "노션 올리기 실패: {이유}".
 
 ## 아카이브 맞추기 (새로 시작·시험·올리기 때)
 
-1.0.0 이전에 만든 아카이브는 11칸이다. 칸을 더하는 것만 하고, 있는 칸·줄은 고치거나 지우지 않는다.
+디자인 기준은 `design/claude_code_package/notion_schema.json`(노션 전용). 1.0.0 이전에 만든 아카이브는 11칸, 1.1.0은 16칸이다. 칸을 더하고 선택지 색을 맞추는 것만 하고, 있는 칸·줄은 지우거나 이름을 바꾸지 않는다.
 
-- 없는 칸만 `notion-update-data-source`로 더한다: `ADD COLUMN "짧은 제목" RICH_TEXT; ADD COLUMN "호" NUMBER; ADD COLUMN "상태" SELECT('후보':yellow, '읽는 중':blue, '요약 완료':green); ADD COLUMN "머리기사" CHECKBOX; ADD COLUMN "근거" MULTI_SELECT()` 중 필요한 것.
-- 새 `키워드` 선택지 색은 `references/앞면_틀.md`의 키워드 색 규칙을 따른다(이미 있는 선택지 색은 바꾸지 않는다. 표지 카드는 그 색을 그대로 쓴다).
-- 옛 줄의 새 칸(짧은 제목·호·상태)은 비어 있어도 된다. 채우지 않는다.
+- 없는 칸만 `notion-update-data-source`로 더한다: `ADD COLUMN "짧은 제목" RICH_TEXT; ADD COLUMN "저자 약칭" RICH_TEXT; ADD COLUMN "호" NUMBER; ADD COLUMN "상태" SELECT('후보':yellow, '읽는 중':blue, '요약 완료':green); ADD COLUMN "머리기사" CHECKBOX; ADD COLUMN "근거" MULTI_SELECT()` 중 필요한 것.
+- `키워드` 선택지 색은 디자인 순서로 맞춘다: `설정/paper-scout.json`의 `키워드` 순서대로 red → green → blue → orange → purple → pink → brown. 다르면 `ALTER COLUMN "키워드" SET SELECT(...)`로 **모든 선택지를 그대로 둔 채** 색만 바꾼다(설정에 없는 선택지는 뒤 색을 이어서). 표지 카드는 이 색을 쓴다.
+- 디자인 스키마의 이름이 다른 칸은 이렇게 맞춰 쓴다(새로 만들지 않는다): 저널 = `출처`, DOI = `원문`, TL;DR = `결과 한 줄`, 조테로 = `조테로 저장`, 오픈 액세스 = `오픈 액세스`(URL). 신간은 칸 대신 보기 필터(날짜)로, 표지(책 표지 이미지)는 아직 쓰지 않는다.
+- 옛 줄의 새 칸(짧은 제목·저자 약칭·호·상태)은 비어 있어도 된다. 채우지 않는다.
+- 아카이브가 전체 페이지 데이터베이스(fetch에서 `inline="false"`)이면 `notion-update-data-source`의 `is_inline: true`로 표지 안에 펼친다. 그래야 표지에서 논문 서점 보기가 보인다.
 
 ## 논문 서점 보기
 
-아카이브(database_id = `notion_db_url`, data_source_id = fetch한 collection://)에 이 이름의 보기가 없을 때만 `notion-create-view`로 만든다. 이미 있으면 그대로 둔다.
+디자인(`notion_schema.json`의 views)대로 네 보기를 둔다. 아카이브(database_id = `notion_db_url`, data_source_id = fetch한 collection://)를 fetch해 보기 이름과 종류를 보고, **없는 것만** `notion-create-view`로 만든다. 같은 이름·종류가 있으면 그대로 둔다.
 
 | 이름 | 종류 | configure |
 |---|---|---|
-| 이번 주 신간 | gallery | `FILTER "날짜" >= "one_week_ago"; SORT BY "날짜" DESC; SHOW "키워드", "상태", "저자", "출처"; CARD LAYOUT default` |
-| 키워드별 서가 | gallery | `GROUP BY "키워드"; SORT BY "날짜" DESC; SHOW "키워드", "상태", "저자"; CARD LAYOUT default` |
-| 읽기 상태별 | board | `GROUP BY "상태"; SORT BY "날짜" DESC; SHOW "키워드", "저자"` |
+| 신간 매대 | gallery | `FILTER "날짜" >= "yesterday"; SORT BY "날짜" DESC; SHOW "키워드", "상태"; CARD LAYOUT default` |
+| 키워드별 서가 | gallery | `GROUP BY "키워드"; SORT BY "날짜" DESC; SHOW "키워드", "상태"; CARD LAYOUT default` |
+| 읽기 상태별 | gallery | `GROUP BY "상태"; SORT BY "날짜" DESC; SHOW "키워드", "상태"; CARD LAYOUT default` |
+| 표 | table | (설정 없음) |
 
-노션 API로는 보기 탭 순서를 바꿀 수 없다. 보고에 "노션에서 '이번 주 신간' 탭을 맨 앞으로 끌어 두면 표지에서 서점 모양으로 보입니다"를 덧붙인다.
+- 신간은 디자인의 `신간` 체크 칸 대신 "어제 이후 날짜"로 거른다(매일 이전 호의 체크를 지울 필요가 없다).
+- 1.1.0에서 만든 보기는 `notion-update-view`로 맞춘다: "이번 주 신간"(gallery)은 이름을 "신간 매대"로, configure를 위 신간 매대 줄로 바꾼다. "읽기 상태별"이 board면 이름을 "상태 보드"로 바꿔 두고 갤러리 "읽기 상태별"을 새로 만든다. 데이터베이스를 만들 때 생긴 표 보기(Default view 등)는 이름을 "표"로 바꾼다.
+- 노션 API로는 보기 탭 순서를 바꿀 수 없다. 보고에 "노션에서 '신간 매대' 탭을 맨 앞으로 끌어 두면 표지에서 서점 모양으로 보입니다"를 덧붙인다.
 
 ## 할 일 B · 새로 시작 (메인이 "새로 시작: {페이지 주소}"를 맡길 때)
 
@@ -62,7 +67,7 @@ description: 매일 논문 결과를 본인 노션 The Daily Paper에 올리는 
 
 1. 그 페이지를 fetch한다. 못 열면 "Notion 커넥터에 이 페이지 접근 권한이 있는지 확인해 주세요"로 실패를 보고하고 멈춘다.
 2. 페이지에 아카이브 데이터베이스 말고 다른 내용이 있는데 메인이 "덮어쓰기 허락"을 주지 않았으면, 고치지 말고 "이 페이지에 내용이 있습니다. 빈 페이지를 주거나 덮어쓰기를 허락하세요"로 실패를 보고하고 멈춘다.
-3. 페이지 안에 인라인 데이터베이스 "논문 아카이브"가 있으면 그대로 쓴다. 없으면 페이지 안에 **인라인으로** 만든다. 칸은 `references/아카이브_본문_틀.md`의 16칸이다(선택지는 아래 "아카이브 맞추기"). 기존 `Name` 칸은 `제목`으로 이름을 바꾸고 없는 칸만 더한다. 이어서 "논문 서점 보기" 셋을 만든다.
+3. 페이지 안에 인라인 데이터베이스 "논문 아카이브"가 있으면 그대로 쓴다. 없으면 페이지 안에 **인라인으로** 만든다. 칸은 `references/아카이브_본문_틀.md`의 17칸이다(선택지는 아래 "아카이브 맞추기"). 기존 `Name` 칸은 `제목`으로 이름을 바꾸고 없는 칸만 더한다. 이어서 "논문 서점 보기" 셋을 만든다.
 4. 표지를 `references/앞면_틀.md`의 "창간 준비호"로 replace_content 하고, 표지 아이콘을 📰로 한다(icon 인자, 이때만). 키워드는 `설정/paper-scout.json`에서, 아카이브 줄은 다시 fetch한 결과에서 그대로 옮긴다.
 5. `매일논문/시험/notion-publisher/새로시작.json`에 `{"notion_url": "{표지 주소}", "notion_db_url": "{데이터베이스 주소}"}`를 쓴다. 둘을 바꿔 쓰지 않는다. **`설정/notion-publisher.json`은 고치지 않는다**: 지금 쓰는 노션(기본 정보)은 시험이 통과해야 바뀐다.
 6. 이어서 할 일 C(시험)를 이 새 주소로 한다.
@@ -72,7 +77,7 @@ description: 매일 논문 결과를 본인 노션 The Daily Paper에 올리는 
 노션 설정이 실제로 돌아가는지 본다. 대시보드가 앞 담당 시험의 결과 한 편을 `매일논문/시험/notion-publisher/`에 `D01`로 미리 둔다(`목록.json`, 요약했으면 `D01.md`). **표지는 바꾸지 않고**, 아카이브에 시험 줄 한 줄만 실제로 만든다(사람이 노션에서 지워도 된다).
 
 1. 주소를 읽는다. 새로 시작 뒤라 `매일논문/시험/notion-publisher/새로시작.json`가 있으면 그 주소로, 없으면 `설정/notion-publisher.json`으로 시험한다. 칸이 비었으면 나머지를 하지 않고 실패로 쓴다(제안: 대시보드 노션 올리기에서 페이지 주소를 넣고 새로 시작).
-2. 점검: ① 표지 페이지가 열린다(fetch, 휴지통에 있으면 실패) ② 아카이브 데이터베이스가 열린다(휴지통이면 실패) ③ 표지 안에 `<database …>논문 아카이브</database>` 줄이 있고 `notion_db_url`과 같은 데이터베이스다 ④ 아카이브 칸이 16칸(이름과 종류)과 맞다. 없는 칸은 "아카이브 맞추기"로 더한 뒤 다시 보고, 이름은 같은데 종류가 다르면 고치지 말고 실패로 쓴다 ⑤ "논문 서점 보기" 셋이 있다. 없으면 만든다(만들지 못하면 실패지만 필수는 아니다).
+2. 점검: ① 표지 페이지가 열린다(fetch, 휴지통에 있으면 실패) ② 아카이브 데이터베이스가 열린다(휴지통이면 실패) ③ 표지 안에 `<database …>논문 아카이브</database>` 줄이 있고 `notion_db_url`과 같은 데이터베이스다 ④ 아카이브 칸이 17칸(이름과 종류)과 맞고 키워드 색이 디자인 순서다. 없는 칸은 "아카이브 맞추기"로 더한 뒤 다시 보고, 이름은 같은데 종류가 다르면 고치지 말고 실패로 쓴다 ⑤ "논문 서점 보기" 넷(신간 매대·키워드별 서가·읽기 상태별·표)이 있다. 없으면 만든다(만들지 못하면 실패지만 필수는 아니다).
 3. ①~④가 모두 통과하면 `D01`로 아카이브에 한 줄을 만든다(`references/아카이브_본문_틀.md`). 제목 칸은 `[시험] {제목}`, 날짜 칸은 오늘.
 4. `매일논문/시험/notion-publisher/결과.json`을 쓴다.
 
@@ -86,7 +91,7 @@ description: 매일 논문 결과를 본인 노션 The Daily Paper에 올리는 
     {"이름": "표지 페이지 열림", "필수": true, "통과": true, "설명": ""},
     {"이름": "아카이브 데이터베이스 열림", "필수": true, "통과": true, "설명": ""},
     {"이름": "아카이브가 표지 안에 있음", "필수": true, "통과": true, "설명": ""},
-    {"이름": "아카이브 칸 16개", "필수": true, "통과": true, "설명": "더한 칸이 있으면 그 이름 / 종류가 다르면 무엇이 다른지"},
+    {"이름": "아카이브 칸 17개", "필수": true, "통과": true, "설명": "더한 칸이 있으면 그 이름 / 종류가 다르면 무엇이 다른지"},
     {"이름": "논문 서점 보기", "필수": false, "통과": true, "설명": "만든 보기 이름 / 못 만든 이유"},
     {"이름": "시험 줄 올리기", "필수": true, "통과": true, "설명": "만든 페이지 URL, 제목이 '[시험]'으로 시작하니 지워도 됨 / 실패 이유"}
   ],
