@@ -21,6 +21,7 @@ READER_DEFAULT = {"사용": True, "요약할_편수": 2}
 NOTION_FILE = ROOT / "설정/notion-publisher.json"  # notion-publisher(표지·아카이브 주소). 필수 담당, 새로 시작 때 담당이 쓴다
 NOTION_DEFAULT = {"notion_url": "", "notion_db_url": ""}
 AGENTS = ROOT / ".claude/agents"
+VERSION = (ROOT / "VERSION").read_text().strip() if (ROOT / "VERSION").exists() else "?"  # MAJOR.MINOR.PATCH, 규칙은 CLAUDE.md 7절
 
 
 
@@ -132,7 +133,10 @@ def state():
         "scout": read_json(SCOUT_FILE),
         "zotero": read_json(ZOTERO_FILE, ZOTERO_DEFAULT),
         "reader": read_json(READER_FILE, READER_DEFAULT),
+        "notion_new": notion_new_state(),  # 먼저: 시험이 통과했으면 여기서 설정을 바꾼 뒤 아래에서 읽는다
         "notion": read_json(NOTION_FILE, NOTION_DEFAULT),
+        "running": [n for n, r in AGENT_RUNS.items() if r["proc"].poll() is None],
+        "version": VERSION,
         "tests": {f.stem: read_json(TESTS / f.stem / "결과.json") for f in AGENTS.glob("*.md")},
         "info": INFO_FILE.read_text(),
         "agents": [{"name": f.stem, "text": f.read_text(), **{k: v for k, v in front(f.read_text()).items() if k in ("model", "tools", "description")},
@@ -466,6 +470,30 @@ def start_agent_test(name, task="시험"):
     return True, "시험을 시작했습니다"
 
 
+def notion_new_state():
+    """노션 새로 시작의 새 주소(매일논문/시험/notion-publisher/새로시작.json, 담당이 씀).
+    시험이 통과하고 결과의 주소가 같으면 그때 설정/notion-publisher.json(지금 쓰는 노션)에 옮긴다. 실패하면 설정은 그대로."""
+    d = TESTS / "notion-publisher"
+    cand = read_json(d / "새로시작.json")
+    if not cand:
+        return None
+    if (r := AGENT_RUNS.get("notion-publisher")) and r["proc"].poll() is None:
+        return cand | {"상태": "시험 중"}
+    if cand.get("상태") in ("적용", "실패"):
+        return cand
+    res = read_json(d / "결과.json")
+    if not res:  # 대시보드를 다시 켜서 실행을 놓쳤거나 아직 결과가 없다
+        return cand | {"상태": "결과 기다림"}
+    same = res.get("notion_url") == cand.get("notion_url") and res.get("notion_db_url") == cand.get("notion_db_url")
+    ok = bool(res.get("통과")) and same and not (ROOT / ".git").exists()
+    if ok:
+        NOTION_FILE.write_text(json.dumps({"notion_url": cand["notion_url"], "notion_db_url": cand["notion_db_url"]}, ensure_ascii=False, indent=2) + "\n")
+        CHECKS.pop("에이전트", None)
+    cand |= {"상태": "적용" if ok else "실패", "처리": time.strftime("%Y-%m-%d %H:%M")}
+    (d / "새로시작.json").write_text(json.dumps(cand, ensure_ascii=False, indent=2) + "\n")
+    return cand
+
+
 def tool_step(c):
     """stream-json의 도구 호출 하나를 화면에 보일 한 줄로."""
     i = c.get("input") or {}
@@ -684,34 +712,36 @@ PAGE = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>매일 논문 관리</title>
 <style>
 :root{
- --bg:#f6f5f2;--surface:#fff;--surface2:#f2f0ec;--line:#e7e4de;--line2:#d7d3cb;
- --text:#1d1c1a;--text2:#5d5951;--text3:#8f8a80;
- --accent:#9b2226;--accent-bg:#f7ebea;
- --ok:#24744a;--ok-bg:#e6f2ea;--warn:#946200;--warn-bg:#fbf1da;--bad:#b42318;--bad-bg:#fcebe9;
- --r:12px;--shadow:0 1px 2px rgba(28,24,18,.05),0 0 0 1px var(--line);
+ --bg:#fafafa;--side:#f4f4f5;--surface:#fff;--surface2:#f4f4f6;--line:#e9e9ee;--line2:#d9d9e0;
+ --text:#18181b;--text2:#52525b;--text3:#8a8a93;
+ --accent:#4f46e5;--accent-2:#7c3aed;--accent-bg:#eef0ff;--on-accent:#fff;
+ --ok:#15803d;--ok-bg:#ecfdf3;--warn:#b45309;--warn-bg:#fff7ed;--bad:#dc2626;--bad-bg:#fef2f2;
+ --r:12px;--shadow:0 1px 2px rgba(16,24,40,.04),0 0 0 1px var(--line);--lift:0 4px 16px rgba(16,24,40,.08),0 0 0 1px var(--line);
  --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Segoe UI",sans-serif;
  --mono:ui-monospace,"SF Mono",Menlo,monospace}
 @media (prefers-color-scheme:dark){:root{
- --bg:#121110;--surface:#1b1a18;--surface2:#232220;--line:#2d2b28;--line2:#3b3935;
- --text:#ecebe7;--text2:#b4b0a7;--text3:#837f77;
- --accent:#e8806f;--accent-bg:#3a201c;
- --ok:#71c595;--ok-bg:#15291d;--warn:#e3b452;--warn-bg:#2e2512;--bad:#f2897b;--bad-bg:#351a18;
- --shadow:0 0 0 1px var(--line)}}
+ --bg:#0e0e10;--side:#131316;--surface:#17171a;--surface2:#1f1f23;--line:#27272c;--line2:#36363d;
+ --text:#ededef;--text2:#a1a1aa;--text3:#71717a;
+ --accent:#818cf8;--accent-2:#a78bfa;--accent-bg:#1f1d3d;--on-accent:#0e0e10;
+ --ok:#4ade80;--ok-bg:#0f2a1a;--warn:#fbbf24;--warn-bg:#2a2010;--bad:#f87171;--bad-bg:#2d1414;
+ --shadow:0 0 0 1px var(--line);--lift:0 8px 24px rgba(0,0,0,.4),0 0 0 1px var(--line2)}}
 *{box-sizing:border-box}[hidden]{display:none!important}
-html,body{margin:0;background:var(--bg);color:var(--text);font:14.5px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+::selection{background:var(--accent-bg)}
 a{color:inherit}
 button{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.app{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
-aside{position:sticky;top:0;height:100vh;overflow-y:auto;padding:22px 14px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:22px}
+.app{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:100vh}
+aside{position:sticky;top:0;height:100vh;overflow-y:auto;padding:20px 12px;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:20px}
 .brand{display:flex;gap:10px;align-items:center;padding:0 8px}
-.mark{width:34px;height:34px;border-radius:9px;background:var(--text);color:var(--bg);display:grid;place-items:center;font:700 15px Georgia,serif;letter-spacing:-.02em}
+.mark{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;display:grid;place-items:center;font:700 14px var(--sans);letter-spacing:-.03em;box-shadow:0 2px 6px rgba(79,70,229,.3)}
 .brand b{display:block;font-size:15px;letter-spacing:-.01em}.brand small{color:var(--text3);font-size:12px}
 nav{display:flex;flex-direction:column;gap:2px}
-nav button{display:flex;align-items:center;gap:10px;border:0;background:none;padding:8px 10px;border-radius:8px;color:var(--text2);font-weight:500;cursor:pointer;text-align:left;white-space:nowrap}
+nav button{display:flex;align-items:center;gap:10px;border:0;background:none;padding:7px 10px;border-radius:7px;color:var(--text2);font-weight:500;font-size:13.5px;cursor:pointer;text-align:left;white-space:nowrap;transition:background .12s,color .12s}
 nav button:hover{background:var(--surface2);color:var(--text)}
-nav button[aria-selected=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow);font-weight:600}
-nav svg{width:17px;height:17px;flex:none}
+nav button[aria-selected=true]{background:var(--surface);color:var(--accent);box-shadow:var(--shadow);font-weight:600}
+nav button[aria-selected=true] svg{color:var(--accent)}
+nav svg{width:16px;height:16px;flex:none;color:var(--text3)}
 .subh{font-size:13px;margin:16px 0 8px;color:var(--text2)}.subh:first-of-type{margin-top:0}
 .navtoggle{display:flex;justify-content:space-between;align-items:center;width:100%;border:0;background:none;padding:0 10px 4px;font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--text3);cursor:pointer}
 .navtoggle:hover{color:var(--text)}.navcount{font-variant-numeric:tabular-nums}
@@ -722,10 +752,10 @@ nav svg{width:17px;height:17px;flex:none}
 .answer .ah{font-size:12px;font-weight:600;color:var(--text3);margin-bottom:6px}.answer .ab{white-space:pre-wrap;font-size:13.5px;line-height:1.65}
 .opt{margin-left:auto;font-size:10.5px;color:var(--text3);border:1px solid var(--line);border-radius:5px;padding:0 5px}
 .navsub{font-size:11px;font-weight:600;color:var(--text3);padding:8px 10px 2px 14px}nav button.sub{margin-left:10px;width:calc(100% - 10px)}
-.navh{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--text3);padding:16px 10px 4px}.navh:first-child{padding-top:0}
+.navh{font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--text3);padding:18px 10px 6px}.navh:first-child{padding-top:0}
 .num{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--surface2);color:var(--text2);flex:none}
 .num.ok{background:var(--ok-bg);color:var(--ok)}nav button.locked .num{background:none;font-size:11px}nav button.locked{color:var(--text3)}nav button.locked .num{opacity:.55}
-.kick{font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px}
+.kick{display:inline-block;font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-bg);border-radius:6px;padding:2px 8px;margin-bottom:10px}
 .stepnav{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
 .nxwrap{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto}.nxhint{color:var(--text3);font-size:12.5px}
 .lockcard{text-align:center;padding:40px 20px}.lockico{font-size:28px;margin-bottom:8px}
@@ -734,21 +764,21 @@ nav svg{width:17px;height:17px;flex:none}
 .side-foot{margin-top:auto;padding:0 8px;font-size:12px;color:var(--text3)}
 .side-foot a{display:inline-flex;gap:6px;align-items:center;color:var(--text2);text-decoration:none;font-weight:500}
 .side-foot a:hover{color:var(--text)}
-main{padding:34px 44px 120px;max-width:1040px;width:100%}
-.head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:24px;flex-wrap:wrap}
-.head h1{margin:0;font-size:24px;letter-spacing:-.02em}
-.head p{margin:4px 0 0;color:var(--text2)}
-.banner{background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:10px 14px;margin-bottom:18px;font-weight:500}
-.grid{display:grid;gap:14px}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
-.card{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);padding:20px}
-.card h2{margin:0;font-size:15px;letter-spacing:-.01em}
-.card .desc{margin:3px 0 0;color:var(--text3);font-size:13px}
-.card-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
-.stat .k{font-size:12.5px;color:var(--text3);font-weight:500}
-.stat .v{font-size:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:650;letter-spacing:-.02em;margin-top:6px;font-variant-numeric:tabular-nums}
+main{padding:40px 48px 120px;max-width:1120px;width:100%;margin:0 auto}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:28px;flex-wrap:wrap}
+.head h1{margin:0;font-size:28px;font-weight:700;letter-spacing:-.03em;line-height:1.25}
+.head p{margin:6px 0 0;color:var(--text2);font-size:14.5px;max-width:60ch}
+.banner{background:var(--warn-bg);color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 25%,transparent);border-radius:10px;padding:11px 15px;margin-bottom:20px;font-weight:500}
+.grid{display:grid;gap:16px}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.card{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);padding:22px 24px;transition:box-shadow .15s}
+.card h2{margin:0;font-size:15.5px;font-weight:650;letter-spacing:-.015em}
+.card .desc{margin:4px 0 0;color:var(--text3);font-size:13px}
+.card-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px 12px;margin-bottom:16px}.card-h>:first-child{flex:1 1 200px;min-width:0}
+.stat .k{font-size:12px;color:var(--text3);font-weight:600;letter-spacing:.01em}
+.stat .v{font-size:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:650;letter-spacing:-.02em;margin-top:6px;font-variant-numeric:tabular-nums}
 .stat .s{font-size:12.5px;color:var(--text2);margin-top:2px}
-.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:99px;background:var(--surface2);color:var(--text2);white-space:nowrap}
-.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:6px;background:var(--surface2);color:var(--text2);white-space:nowrap;line-height:1.6}
+.badge::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
 .badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.warn{background:var(--warn-bg);color:var(--warn)}.badge.bad{background:var(--bad-bg);color:var(--bad)}
 .badge.plain::before{display:none}
 .list{display:flex;flex-direction:column}
@@ -764,7 +794,8 @@ main{padding:34px 44px 120px;max-width:1040px;width:100%}
 .f{margin-bottom:14px}.f:last-child{margin-bottom:0}
 .f label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)}
 .f .help{font-size:12.5px;color:var(--text3);margin-top:5px}
-input,textarea,select{width:100%;font:inherit;font-size:14px;color:var(--text);background:var(--surface);border:1px solid var(--line2);border-radius:8px;padding:8px 11px;transition:border-color .15s,box-shadow .15s}
+input,textarea,select{width:100%;font:inherit;font-size:14px;color:var(--text);background:var(--surface);border:1px solid var(--line2);border-radius:8px;padding:8px 12px;transition:border-color .15s,box-shadow .15s;box-shadow:0 1px 1px rgba(16,24,40,.03)}
+input::placeholder,textarea::placeholder{color:var(--text3)}
 input:focus,textarea:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
 .fgrid{display:grid;grid-template-columns:minmax(220px,290px) minmax(0,1fr);gap:14px;align-items:start}
 .fgrid .flist{max-height:calc(100vh - 170px);overflow:auto}.fgrid .li{cursor:pointer;text-align:left;width:100%;background:none;border:0;font:inherit;color:inherit}
@@ -820,12 +851,12 @@ textarea{font-family:var(--mono);font-size:13px;line-height:1.6;min-height:110px
 .guide .foot span{color:var(--text3);font-size:12.5px}
 .result.ok{background:var(--ok-bg);color:var(--ok)}.result.bad{background:var(--bad-bg);color:var(--bad)}.result.wait{background:var(--surface2);color:var(--text2)}
 .result .sub{color:var(--text2);font-size:12.5px;margin-top:2px;word-break:break-all}
-.btn{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:8px;padding:8px 14px;font-weight:600;font-size:13.5px;cursor:pointer;background:var(--text);color:var(--bg);transition:opacity .15s}
-.btn:hover{opacity:.88}.btn:disabled{opacity:.45;cursor:default}
-.btn.ghost{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--line2)}
-.btn.ghost:hover{background:var(--surface2);opacity:1}
-.btn.primary{background:var(--accent);color:var(--bg);padding:10px 18px;font-size:14.5px}
-.todo{background:var(--accent-bg);border:2px solid var(--accent);border-radius:var(--r);padding:16px 20px;margin-bottom:16px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:8px;padding:8px 14px;font-weight:600;font-size:13.5px;line-height:1.3;cursor:pointer;background:var(--accent);color:var(--on-accent);box-shadow:0 1px 2px rgba(16,24,40,.08),inset 0 1px 0 rgba(255,255,255,.12);transition:filter .15s,background .15s,transform .05s;text-decoration:none}
+.btn:hover{filter:brightness(1.07)}.btn:active{transform:translateY(1px)}.btn:disabled{opacity:.45;cursor:default;filter:none;transform:none}
+.btn.ghost{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(16,24,40,.05),inset 0 0 0 1px var(--line2)}
+.btn.ghost:hover{background:var(--surface2);filter:none}
+.btn.primary{padding:10px 18px;font-size:14.5px}
+.todo{background:var(--accent-bg);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);border-radius:var(--r);padding:18px 22px;margin-bottom:18px}
 .todo-h{font-weight:700;color:var(--accent);margin-bottom:10px}
 .todo ol{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:7px}
 .todo li{display:flex;gap:9px;align-items:center;color:var(--text2)}.todo li.cur{color:var(--text);font-weight:700}.todo li.dn{color:var(--ok)}
@@ -838,10 +869,11 @@ textarea{font-family:var(--mono);font-size:13px;line-height:1.6;min-height:110px
 .savebar{position:sticky;bottom:16px;margin-top:20px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);box-shadow:0 8px 24px rgba(20,16,10,.1),0 0 0 1px var(--line);border-radius:12px;padding:10px 10px 10px 16px}
 .savebar span{color:var(--text3);font-size:13px}.savebar.dirty span{color:var(--warn);font-weight:600}
 .tools{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px}
-.tool{font:12px var(--mono);background:var(--surface2);color:var(--text2);border-radius:5px;padding:2px 7px}
+.tool{font:12px var(--mono);background:var(--surface2);color:var(--text2);border-radius:5px;padding:2px 7px;max-width:100%;overflow-wrap:anywhere}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
-th{font-size:12px;font-weight:600;color:var(--text3);text-align:left;padding:0 10px 8px}
-td{padding:10px;border-top:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;font-weight:600;color:var(--text3);text-align:left;padding:0 10px 10px;letter-spacing:.02em}
+td{padding:11px 10px;border-top:1px solid var(--line);vertical-align:top}
+tbody tr:hover td{background:color-mix(in srgb,var(--surface2) 60%,transparent)}
 td:first-child,th:first-child{padding-left:0}td:last-child,th:last-child{padding-right:0}
 td a{text-decoration:none;font-weight:550}td a:hover{text-decoration:underline}
 .err{color:var(--text3);font-size:12px;margin-top:2px}
@@ -851,7 +883,7 @@ details{margin-top:14px}summary{cursor:pointer;color:var(--text2);font-weight:55
 pre{white-space:pre-wrap;word-break:break-word;background:var(--surface2);border-radius:8px;padding:12px;font:12.5px/1.6 var(--mono);margin:10px 0 0}
 .empty{text-align:center;padding:48px 20px;color:var(--text3)}
 .row-actions{display:flex;gap:8px;flex-wrap:wrap}
-#toast{position:fixed;bottom:22px;left:50%;transform:translate(-50%,20px);opacity:0;transition:all .2s;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:550;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.18);max-width:calc(100vw - 32px)}
+#toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,20px);opacity:0;transition:all .2s;background:var(--text);color:var(--bg);padding:10px 18px;border-radius:999px;font-weight:550;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.18);max-width:calc(100vw - 32px)}
 #toast.on{opacity:1;transform:translate(-50%,0)}
 .spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .7s linear infinite;flex:none;margin-top:2px}
 @keyframes s{to{transform:rotate(360deg)}}
@@ -863,7 +895,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--surface2);border
  aside{position:sticky;z-index:5;height:auto;flex-direction:row;align-items:center;gap:12px;padding:10px 16px;border-right:0;border-bottom:1px solid var(--line);background:var(--bg);overflow-x:auto}
  .brand div,.side-foot,.navh,.navsub{display:none}.brand{padding:0}
  nav{flex-direction:row}nav button{padding:7px 10px}nav svg{display:none}
- main{padding:22px 16px 110px}.g2,.two{grid-template-columns:1fr}
+ aside{background:var(--side)}main{padding:22px 16px 110px}.g2,.two{grid-template-columns:1fr}.head h1{font-size:23px}
  table thead{display:none}table,tbody,tr,td{display:block;width:100%}tr{padding:10px 0;border-top:1px solid var(--line)}td{border:0;padding:2px 0}}
 </style></head><body>
 <div class="app"><aside>
@@ -1076,8 +1108,9 @@ const PAGES={
    saveRow(()=>save('zotero',JSON.stringify({...z,사용:on.checked,컬렉션:$('#zc').value.trim()})))),
    el('div',{style:'height:14px'}),z.사용?testCard('zotero-keeper',testFresh('zotero-keeper',z))
     :el('div',{className:'result ok'},el('span',{},'✓'),el('div',{},'조테로를 쓰지 않습니다. 다음 단계로 넘어가세요.'))])}},
- '노션 올리기':{r(){return withAgent('notion-publisher',[card('지금 쓰는 노션','설정/notion-publisher.json · 새로 시작하면 notion-publisher가 씁니다.',notionNow(S.notion)),
-  el('div',{style:'height:14px'}),startCard(),el('div',{style:'height:14px'}),S.notion.notion_db_url?testCard('notion-publisher',testFresh('notion-publisher',S.notion))
+ '노션 올리기':{r(){const nn=S.notion_new,busy=(S.running||[]).includes('notion-publisher');
+  return withAgent('notion-publisher',[card('지금 쓰는 노션','설정/notion-publisher.json · 새로 시작한 뒤 시험이 통과해야 바뀝니다.',newStartNote(nn),notionNow(S.notion)),
+  el('div',{style:'height:14px'}),startCard(),el('div',{style:'height:14px'}),S.notion.notion_db_url||nn||busy?testCard('notion-publisher',nn&&nn.상태==='실패'||testFresh('notion-publisher',S.notion))
    :el('div',{className:'empty'},'새로 시작하면 이어서 시험까지 합니다.')])}},
  '논문 찾기':{r(){const c=S.config,s=S.scout,kws=[...s.키워드];
   const box=chipBox(kws,'kw',kws.length?'키워드 더하기…':'예: mobile game player churn',mark);
@@ -1237,6 +1270,15 @@ function claudeTask(phrase,ask){return el('div',{className:'guide'},el('h4',{},'
   step('이 문장 보내기','복사해서 그대로 보냅니다.',cmd(phrase,'Claude 대화창')),
   step('물어보면 답하기',ask),
   step('대시보드 새로고침','끝나면 이 화면을 새로고침해 결과를 확인합니다.')))}
+// 새로 시작의 진행: 시험 중이면 기다리라고, 통과해 바뀌었으면 바뀌었다고, 실패면 지금 노션 그대로라고 알린다
+function newStartNote(nn){if(!nn)return '';const link=nn.notion_url?el('a',{href:nn.notion_url,target:'_blank',rel:'noopener'},'새 표지 열기 ↗'):'';
+ if(nn.상태==='시험 중'||nn.상태==='결과 기다림')return el('div',{className:'result wait',style:'margin:0 0 14px'},el('span',{className:'spin'}),
+  el('div',{},'새 페이지로 새로 시작해 시험하는 중입니다. 시험이 통과하면 아래 표지와 논문 아카이브가 새 페이지로 바뀝니다.',el('div',{className:'sub'},link)));
+ if(nn.상태==='적용'&&nn.notion_url===S.notion.notion_url)return el('div',{className:'result ok',style:'margin:0 0 14px'},el('span',{},'✓'),
+  el('div',{},'시험이 통과해 지금 쓰는 노션을 새 페이지로 바꿨습니다.',el('div',{className:'sub'},nn.처리||'')));
+ if(nn.상태==='실패')return el('div',{className:'result bad',style:'margin:0 0 14px'},el('span',{},'!'),
+  el('div',{},'새 페이지의 시험이 통과하지 못해 지금 쓰는 노션은 그대로입니다. 아래 시험 결과를 보고 고친 뒤 다시 새로 시작하세요.',el('div',{className:'sub'},link)));
+ return ''}
 function notionNow(c){c=c||{};const row=(k,v,ok)=>el('div',{className:'li'},el('span',{className:'ico '+(ok?'ok':'warn')},ok?'✓':'!'),el('div',{className:'grow'},el('div',{className:'t'},k),el('div',{className:'m'},v)));
  return el('div',{className:'list',style:'margin-bottom:16px'},
   row('표지 페이지',c.notion_url?el('a',{href:c.notion_url,target:'_blank',rel:'noopener'},'노션에서 열기 ↗'):'아직 없음',!!c.notion_url),
@@ -1247,8 +1289,8 @@ function startCard(){const u=el('input',{id:'np',type:'url',placeholder:'https:/
  const btn=el('button',{className:'btn',type:'button',onclick:async()=>{const v=u.value.trim();
   if(!isNotion(v))return out.replaceChildren(badBox('노션 페이지 주소를 넣어 주세요. 노션에서 페이지 오른쪽 위 ··· → 링크 복사'));
   btn.disabled=true;const r=await post('/api/agent/test',{name:'notion-publisher',task:`새로 시작: ${v}`+(ow.checked?' 덮어쓰기 허락':'')}).catch(e=>({ok:false,msg:String(e)}));
-  btn.disabled=false;if(!r.ok)return out.replaceChildren(badBox(r.msg));toast('notion-publisher가 노션을 꾸미기 시작했습니다');await load()}},'새로 시작');
- return card(S.notion.notion_url?'다른 페이지로 새로 시작':'노션 새로 시작','빈 페이지를 하나 만들고 오른쪽 위 ··· → 링크 복사. notion-publisher가 그 안에 논문 아카이브(11칸)와 창간 준비호 표지를 만들고, 이어서 시험까지 합니다. 전에 쓰던 페이지는 그대로 남습니다.',
+  btn.disabled=false;if(!r.ok)return out.replaceChildren(badBox(r.msg));toast('notion-publisher가 노션을 꾸미고 시험합니다 · 통과하면 지금 쓰는 노션이 바뀝니다');await load()}},'새로 시작');
+ return card(S.notion.notion_url?'다른 페이지로 새로 시작':'노션 새로 시작','빈 페이지를 하나 만들고 오른쪽 위 ··· → 링크 복사. notion-publisher가 그 안에 논문 아카이브(11칸)와 창간 준비호 표지를 만들고, 이어서 시험 실행까지 합니다. 시험이 통과하면 지금 쓰는 노션(표지·논문 아카이브 주소)이 새 페이지로 바뀌고, 실패하면 그대로입니다. 전에 쓰던 페이지는 그대로 남습니다.',
   el('div',{className:'row-actions'},u,btn),
   el('label',{htmlFor:'now',style:'display:flex;gap:8px;align-items:center;margin-top:10px'},ow,'페이지에 다른 내용이 있어도 표지로 덮어써도 됩니다'),
   el('div',{className:'help'},'Notion 커넥터(claude.ai → 설정 → 커넥터)가 이 페이지에 접근할 수 있어야 합니다.'),out)}
@@ -1305,6 +1347,7 @@ function render(){
    if(s.agent)b.classList.add('sub');return s.agent&&!(STEPS[i-1]||{}).agent?[el('div',{className:'navsub'},AGENT_GROUP),b]:[b]}):[]),
   el('div',{className:'navh'},'매일 쓰기'),...DAILY.map(daily),
   el('div',{className:'navh'},'번외'),...EXTRA.map(daily));
+ document.querySelector('.brand small').textContent=`The Daily Paper 관리 · v${S.version}`;
  $('#foot').replaceChildren(el('span',{},S.schedule?`매일 ${S.schedule} 예약`:'예약 꺼짐'));
  const i=stepIdx(cur),p=PAGES[cur],lk=lockedBy(cur);let head,body;
  if(i>=0){const s=STEPS[i],nx=i<STEPS.length-1?STEPS[i+1].k:'현황';
@@ -1328,6 +1371,19 @@ load();
 
 
 def selftest():
+    global ROOT, TESTS, NOTION_FILE  # 새로 시작: 시험이 통과해야만 설정이 바뀐다(임시 폴더에서)
+    keep = ROOT, TESTS, NOTION_FILE
+    with tempfile.TemporaryDirectory() as t:
+        ROOT = TESTS = pathlib.Path(t); NOTION_FILE = ROOT / "n.json"; d = TESTS / "notion-publisher"; d.mkdir()
+        new = lambda: (d / "새로시작.json").write_text(json.dumps({"notion_url": "u", "notion_db_url": "v"}))
+        new(); assert notion_new_state()["상태"] == "결과 기다림"
+        (d / "결과.json").write_text(json.dumps({"notion_url": "u", "notion_db_url": "v", "통과": False}))
+        assert notion_new_state()["상태"] == "실패" and not NOTION_FILE.exists()
+        new(); (d / "결과.json").write_text(json.dumps({"notion_url": "x", "notion_db_url": "v", "통과": True}))
+        assert notion_new_state()["상태"] == "실패" and not NOTION_FILE.exists()  # 다른 주소로 통과한 결과는 쓰지 않는다
+        new(); (d / "결과.json").write_text(json.dumps({"notion_url": "u", "notion_db_url": "v", "통과": True}))
+        assert notion_new_state()["상태"] == "적용" and json.loads(NOTION_FILE.read_text()) == {"notion_url": "u", "notion_db_url": "v"}
+    ROOT, TESTS, NOTION_FILE = keep
     assert check_config({"키워드": ["a"], "찾을_편수": 2, "요약할_편수": 2}) == ""
     assert check_config({"찾을_편수": 0}) and check_reader({"사용": True, "요약할_편수": 0}) and check_reader({"사용": "y", "요약할_편수": 1})
     assert check_scout({"키워드": ["a"], "기간_일": 30, "키워드당_후보": 10}) == ""
@@ -1375,7 +1431,7 @@ if __name__ == "__main__":
     else:
         port = int(sys.argv[1]) if len(sys.argv) > 1 else 9008
         url = f"http://127.0.0.1:{port}"
-        print(f"대시보드: {url}  (끄기: Ctrl+C)")
+        print(f"매일 논문 v{VERSION} 대시보드: {url}  (끄기: Ctrl+C)")
         if not os.environ.pop("DASH_REOPEN", None):  # 작업공간으로 바꿔 띄울 때는 열려 있던 창이 다시 읽는다
             webbrowser.open(url)
         ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

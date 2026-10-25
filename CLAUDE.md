@@ -27,7 +27,7 @@
 | `zotero-keeper` (선택) | 그날 고른 논문을 조테로 컬렉션에 저장, 조테로 점검·시험 (스킬 `zotero-keeper`). `설정/zotero-keeper.json` `사용`이 false면 부르지 않는다 | `설정/zotero-keeper.json`, `매일논문/{날짜}/목록.json` + 조테로 데스크톱 앱(로컬 커넥터) | `목록.json`의 `zotero_saved`·`zotero_error`(스킬 스크립트가 고침), 시험은 `매일논문/시험/zotero-keeper/` | Read, Glob, Write, Bash(스킬의 조테로 스크립트만) |
 | `paper-reader` (선택) | 논문 1편을 정해진 양식으로 요약, 요약 시험 (스킬 `paper-reader`). `설정/paper-reader.json` `사용`이 false면 부르지 않는다(요약 0편, 노션에는 초록만) | `설정/paper-reader.json`, `매일논문/{날짜}/D*` | `매일논문/{날짜}/D*.md` (직접 저장), 시험은 `매일논문/시험/paper-reader/` | Read, Glob, Write, Bash(판정 `요약` 명령만) |
 | `privacy-guard` (필수) | 결과를 밖으로 보내기 전 점검, 점검 시험 (스킬 `privacy-guard`) | 대상 파일, `설정/연구자_정보.md` | 대화에 판정만, 시험은 `매일논문/시험/privacy-guard/결과.json` | Read, Grep, Glob, Write(시험 결과만) |
-| `notion-publisher` (필수) | 결과를 노션 아카이브 DB에 쌓고 표지 앞면을 그날 호로 바꿈, 노션 새로 시작(아카이브·창간 준비호), 노션 시험 (스킬 `notion-publisher`) | `매일논문/{날짜}/`, `설정/notion-publisher.json`, 다른 담당 설정의 `사용` | 노션, 새로 시작 때 `설정/notion-publisher.json`, 시험은 `매일논문/시험/notion-publisher/` | Read, Glob, Write, ToolSearch + Notion 커넥터(fetch·create-pages·update-page·update-data-source·create-database) |
+| `notion-publisher` (필수) | 결과를 노션 아카이브 DB에 쌓고 표지 앞면을 그날 호로 바꿈, 노션 새로 시작(아카이브·창간 준비호), 노션 시험 (스킬 `notion-publisher`) | `매일논문/{날짜}/`, `설정/notion-publisher.json`, 다른 담당 설정의 `사용` | 노션, 새로 시작 때 `매일논문/시험/notion-publisher/새로시작.json`(시험 통과 뒤 메인·대시보드가 `설정/notion-publisher.json`에 옮김), 시험은 `매일논문/시험/notion-publisher/` | Read, Glob, Write, ToolSearch + Notion 커넥터(fetch·create-pages·update-page·update-data-source·create-database) |
 
 담당끼리는 서로 부르지 않는다. 앞 담당의 결과가 필요하면 메인이 그 파일 경로를 뒤 담당에게 알려 준다.
 담당마다 업무 매뉴얼(할 일·시험)은 스킬 `.claude/skills/{담당}/SKILL.md`, 설정은 `설정/{담당}.json`(privacy-guard는 `설정/연구자_정보.md`)에 있다. 노션에 올리는 모양을 바꾸려면 스킬 `notion-publisher`의 `references/`를 고친다.
@@ -41,7 +41,7 @@
 | "오늘 논문 더 찾아 줘" | 스킬 `daily-paper`를 인자 `추가`로 따른다(오늘 이미 받았어도 설정 편수만큼 **더**, ID는 이어서) |
 | "노션에 올려 줘" | 가장 최근 날짜 폴더에서 `privacy-guard` → "통과"면 `notion-publisher`(새로 올릴 ID = `목록.json`의 ID 중 `노션올림.txt`에 없는 것) → 성공하면 그 ID를 `노션올림.txt`에 더하고 `노션완료.txt` |
 | "설정해 줘", "설치 도와줘", 설정 점검 실패 | 원본 저장소면 `시작하기.md`, 작업공간이면 5절 설정 도우미 |
-| "노션 새로 시작: {페이지 주소}" | `notion-publisher`에 "새로 시작: {페이지 주소}"를 맡긴다(스킬의 새로 시작 → 시험). 페이지에 다른 내용이 있으면 먼저 사용자에게 덮어써도 되는지 묻고, 허락하면 " 덮어쓰기 허락"을 붙인다 |
+| "노션 새로 시작: {페이지 주소}" | `notion-publisher`에 "새로 시작: {페이지 주소}"를 맡긴다(스킬의 새로 시작 → 시험). 시험이 **통과하면** 메인이 `매일논문/시험/notion-publisher/새로시작.json`의 두 주소를 `설정/notion-publisher.json`에 옮긴다(실패하면 지금 설정 그대로). 페이지에 다른 내용이 있으면 먼저 사용자에게 덮어써도 되는지 묻고, 허락하면 " 덮어쓰기 허락"을 붙인다 |
 | "노션 DB 합치기: 소스 {주소} → 타겟 {주소}" (대시보드가 만들어 준 문장) | 6절 DB 합치기 |
 | "노션 점검해 줘", "{담당} 시험해 줘" | 그 담당에 "시험"을 맡긴다(스킬의 시험 할 일). 결과는 `매일논문/시험/{담당}/결과.json` |
 
@@ -74,3 +74,13 @@
 3. 쓰기 전에 표로 보고하고 "진행"을 받는다: 옮길 편수, 중복으로 건너뛸 편수, 칸 대응(소스 칸 → 타겟 칸), 버릴 칸.
 4. 타겟에 줄을 만든다. 본문은 옮기지 않고 맨 위에 원래 페이지 링크(mention-page) 한 줄만 둔다. 타겟 선택 칸에 없는 값은 선택지를 먼저 더한다.
 5. 끝나면 옮긴 편수·건너뛴 편수·실패한 줄(제목과 이유)을 알린다. 소스 데이터베이스와 그 페이지는 고치거나 지우지 않는다.
+
+## 7. 버전
+
+- 지금 버전은 저장소 루트 `VERSION` 파일 한 곳에만 적는다. 모양은 `MAJOR.MINOR.PATCH`(예: 1.0.0). 대시보드 왼쪽 위에 보인다.
+- 원본 저장소를 고쳐 커밋할 때 `VERSION`을 올리고, `CHANGELOG.md` 맨 위에 새 판(버전 — 날짜)과 바뀐 점을 한국어로 적는다. 여러 커밋을 한 판으로 묶어도 된다.
+  - PATCH(1.0.0 → 1.0.1): 고침·문구·디자인처럼 쓰는 방법이 그대로인 변경
+  - MINOR(1.0.1 → 1.1.0): 새 기능·새 화면·새 담당처럼 할 수 있는 일이 늘었지만 지금 설정을 그대로 쓰는 변경
+  - MAJOR(1.1.0 → 2.0.0): 설정 파일 모양이나 담당 구성이 바뀌어 작업공간을 다시 맞춰야 하는 변경. CHANGELOG에 맞추는 방법을 적는다
+- 판을 커밋하면 사용자가 원할 때 `v1.0.0` 같은 git 태그를 붙인다.
+- 작업공간(`workspace/`)의 `VERSION`은 원본에서 복사한 그대로 두고 고치지 않는다.

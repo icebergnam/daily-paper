@@ -1,6 +1,7 @@
 # 매일 논문 (The Daily Paper)
 
 관심 키워드로 매일 새 논문을 찾아 **조테로에 저장**하고, **요약**해서, **노션**에 신문처럼 올립니다.
+지금 버전은 [`VERSION`](VERSION) 파일에, 판마다 바뀐 점은 [CHANGELOG.md](CHANGELOG.md)에 있습니다(대시보드 왼쪽 위에도 보입니다).
 **Claude Code 에이전트**가 담당을 나눠 일합니다. 파이썬은 웹 대시보드와 담당 스킬 안의 작은 스크립트(OpenAlex 검색·조테로 저장·PDF 받기·판정)뿐입니다.
 
 ```
@@ -13,6 +14,7 @@ paper-scout(OpenAlex·Exa 검색, 관계없는 후보 거르기) → 고르기·
 | 위치 | 내용 |
 |---|---|
 | `CLAUDE.md` | 규칙, 담당표, 호출표. Claude가 세션마다 읽습니다 |
+| `VERSION`, `CHANGELOG.md` | 지금 버전(`1.0.0` 꼴)과 판마다 바뀐 점. 올리는 규칙은 `CLAUDE.md` 7절 |
 | `.claude/agents/` | 담당 5명: `paper-scout`(OpenAlex·Exa 검색·거르기·본문), `zotero-keeper`(조테로 저장, 선택), `paper-reader`(요약, 선택), `privacy-guard`(내보내기 전 점검), `notion-publisher`(노션) |
 | `.claude/skills/{담당}/` | 담당마다 업무 매뉴얼(할 일·시험). 노션에 올리는 모양은 `notion-publisher/references/` |
 | `.claude/skills/daily-paper/` | 매일 한 번 실행하는 순서(메인이 따름). 대시보드의 지금 논문 찾기와 예약이 이것을 돌립니다 |
