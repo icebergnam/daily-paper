@@ -127,6 +127,101 @@ def day_record(d):
                        | {"has_md": (d / f"{p['id']}.md").exists()} for p in papers]}
 
 
+LIB_FILE = OUT / "서재.json"  # 노션과 동기화: notion-publisher가 노션 아카이브를 읽어 쓴다(스킬의 서재 내보내기)
+LIB_RUN = {}  # 동기화는 한 번에 하나
+norm = lambda t: re.sub(r"\W+", "", (t or "").lower())
+
+
+def md_fields(text):
+    """D*.md의 '- 칸: 값'(값이 다음 줄 목록으로 이어지면 함께)."""
+    out, key = {}, None
+    for line in text.splitlines():
+        if m := re.match(r"- (연구 질문|방법|결과|저자가 밝힌 한계):\s*(.*)", line):
+            key = m[1]
+            out[key] = m[2].strip()
+        elif line.startswith("- "):
+            key = None
+        elif key and line.strip():
+            out[key] = (out[key] + "\n" + line.strip()).strip()
+    return out
+
+
+def short_title(t):
+    t = re.split(r"[:?]\s|\s[—–-]\s", t)[0].strip()
+    return t if len(t) <= 30 else t[:29].rstrip() + "…"
+
+
+def author_short(authors):
+    return (authors[0].split()[-1] + (" 외" if len(authors) > 1 else "")) if authors and authors[0] else ""
+
+
+def library_data():
+    """서재의 책: 로컬 매일 기록(목록.json·D*.md)에 노션 동기화(서재.json)의 상태·노션 주소·짧은 제목을 덧입힌다.
+    노션에만 있는 줄(다른 컴퓨터에서 올린 것 등)도 꽂는다. '[시험]' 줄은 뺀다."""
+    papers = []
+    for no, d in enumerate(sorted(x for x in OUT.glob("20*") if (x / "목록.json").exists()), 1):
+        for p in read_json(d / "목록.json", []):
+            md = d / f"{p['id']}.md"
+            f = md_fields(md.read_text()) if md.exists() else {}
+            res = f.get("결과", "")
+            tldr = re.sub(r"^- ", "", res.split("\n")[0]) if res else (p.get("abstract") or "")[:220]
+            papers.append({"id": f"{d.name}/{p['id']}", "title": p.get("title", ""), "short": short_title(p.get("title", "")),
+                           "authors": ", ".join(p.get("authors") or []), "authorShort": author_short(p.get("authors") or []),
+                           "year": p.get("year"), "venue": p.get("venue") or "", "kw": p.get("keyword") or "", "issue": no, "date": d.name,
+                           "status": "요약 완료" if f else "후보", "tldr": tldr, "zotero": bool(p.get("zotero_saved")),
+                           "url": p.get("url") or "", "oa": p.get("oa_url") or "", "notion": "",
+                           "ev": list(dict.fromkeys(re.findall(r"§[\d.–-]*\d|Table \d+|Fig\. ?\d+|p\. ?\d+", tldr))),
+                           "table": [[k, f[s]] for k, s in (("목적", "연구 질문"), ("방법", "방법"), ("결과", "결과"), ("한계", "저자가 밝힌 한계")) if f.get(s)]})
+    lib = read_json(LIB_FILE, {})
+    rows = {}
+    for r in sorted(lib.get("논문") or [], key=lambda r: not r.get("상태")):  # 같은 제목이 여러 줄이면 상태가 있는 줄
+        if not str(r.get("제목", "")).startswith("[시험]"):
+            rows.setdefault(norm(r.get("제목")), r)
+    for p in papers:
+        if r := rows.pop(norm(p["title"]), None):
+            p |= {"status": r.get("상태") or p["status"], "notion": r.get("url") or "",
+                  "short": r.get("짧은 제목") or p["short"], "authorShort": r.get("저자 약칭") or p["authorShort"]}
+    for r in rows.values():  # 노션에만 있는 줄
+        ev = r.get("근거") or []
+        papers.append({"id": r.get("url") or norm(r.get("제목")), "title": r.get("제목", ""), "short": r.get("짧은 제목") or short_title(r.get("제목", "")),
+                       "authors": r.get("저자") or "", "authorShort": r.get("저자 약칭") or author_short((r.get("저자") or "").split(", ")),
+                       "year": r.get("연도"), "venue": r.get("출처") or "", "kw": r.get("키워드") or "", "issue": r.get("호") or 0,
+                       "date": r.get("날짜") or "", "status": r.get("상태") or "후보", "tldr": r.get("결과 한 줄") or "",
+                       "zotero": bool(r.get("조테로 저장")), "url": r.get("원문") or "", "oa": r.get("오픈 액세스") or "",
+                       "notion": r.get("url") or "", "ev": ev if isinstance(ev, list) else [], "table": []})
+    top = max((p["issue"] for p in papers), default=0)
+    for p in papers:
+        p["isNew"] = p["issue"] == top
+    kws = list(dict.fromkeys([*(read_json(SCOUT_FILE, {}).get("키워드") or []), *(p["kw"] for p in papers if p["kw"])]))
+    issues = dict(sorted({(p["issue"], p["date"][5:].replace("-", ".")) for p in papers}, reverse=True))
+    return {"papers": papers, "keywords": kws, "issues": [{"no": n, "date": dt} for n, dt in issues.items()],
+            "synced": time.strftime("%m.%d %H:%M", time.localtime(LIB_FILE.stat().st_mtime)) if lib else "", "sync": library_sync_status()}
+
+
+def library_sync():
+    """노션과 동기화: notion-publisher에게 '서재 내보내기'를 맡긴다(노션은 읽기만, 쓰는 것은 매일논문/서재.json 하나)."""
+    if (p := LIB_RUN.get("proc")) and p.poll() is None:
+        return False, "이미 동기화 중입니다"
+    if not read_json(NOTION_FILE, NOTION_DEFAULT).get("notion_db_url"):
+        return False, "노션 아카이브 주소가 없습니다. 처음 설정 → 노션 올리기를 먼저 하세요"
+    if not (exe := shutil.which("claude")):
+        return False, "claude 명령을 찾을 수 없습니다. 1단계 Claude Code 로그인을 보세요"
+    LIB_RUN.update(started=time.time(), proc=launch(exe, "notion-publisher", "서재 내보내기",
+                                                     "서재 내보내기 — 스킬 notion-publisher의 서재 내보내기 할 일을 해라", OUT / "서재동기화.jsonl"))
+    return True, "동기화를 시작했습니다"
+
+
+def library_sync_status():
+    p = LIB_RUN.get("proc")
+    if not p:
+        return {"running": False}
+    _, report, err, _ = read_stream(OUT / "서재동기화.jsonl")
+    running = p.poll() is None
+    wrote = LIB_FILE.exists() and LIB_FILE.stat().st_mtime >= LIB_RUN["started"]
+    return {"running": running, "secs": round(time.time() - LIB_RUN["started"]),
+            "error": "" if running or wrote else (err or report or "담당이 서재.json을 쓰지 않았습니다")}
+
+
 def state():
     return {
         "config": read_json(CFG_FILE),
@@ -428,10 +523,7 @@ def agents_json():
 
 
 def start_agent_test(name, task="시험"):
-    """담당 시험: 이 컴퓨터의 Claude Code를 작업공간에서 머리 없이 띄워 그 담당에게 '시험'(스킬의 할 일 C)을 맡긴다.
-    담당 파일의 tools만 쓰고(--tools) 허용한다(dontAsk: 그 밖은 묻지 않고 거절). 진행은 stream-json으로 실행.jsonl에 남는다.
-    --agent로 담당을 바로 띄우면 claude.ai 커넥터(Exa·Notion)가 안 보여서, 메인이 Task로 담당을 부르게 한다.
-    메인이 subagent_type을 빠뜨리면 일반 에이전트가 대신 돌아 버리므로 지시는 시스템 프롬프트에 못 박는다."""
+    """담당 시험: 이 컴퓨터의 Claude Code를 작업공간에서 머리 없이 띄워 그 담당에게 '시험'(스킬의 할 일 C)을 맡긴다. 기록은 실행.jsonl."""
     if not re.fullmatch(r"[\w-]+", name or "") or not (AGENTS / f"{name}.md").exists() or not (ROOT / f".claude/skills/{name}/SKILL.md").exists():
         return False, "시험할 수 없는 담당입니다"
     if task != "시험" and not (name == "notion-publisher" and NEW_START.fullmatch(task or "")):  # 화면이 맡길 수 있는 일은 이 둘뿐
@@ -451,13 +543,21 @@ def start_agent_test(name, task="시험"):
         r = subprocess.run(prep, capture_output=True, text=True, cwd=ROOT, timeout=180)
         if r.returncode:
             return False, "시험 준비 실패: " + ((r.stderr or r.stdout).strip().splitlines() or ["?"])[-1]
+    job = "시험: 스킬 {name}의 시험 할 일을 해라" if task == "시험" else f"{task} — 스킬 {name}의 새로 시작 할 일을 하고 이어서 시험까지 해라"
+    AGENT_RUNS[name] = {"proc": launch(exe, name, task, job.format(name=name), d / "실행.jsonl"), "started": time.time()}
+    return True, "시험을 시작했습니다"
+
+
+def launch(exe, name, task, job, log):
+    """담당 하나에게 일(job)을 맡기는 머리 없는 Claude Code. 담당 파일의 tools만 쓰고(--tools) 허용한다(dontAsk: 그 밖은 묻지 않고 거절).
+    --agent로 담당을 바로 띄우면 claude.ai 커넥터(Exa·Notion)가 안 보여서, 메인이 Task로 담당을 부르게 한다.
+    메인이 subagent_type을 빠뜨리면 일반 에이전트가 대신 돌아 버리므로 지시는 시스템 프롬프트에 못 박는다. 진행은 stream-json으로 log에 남는다."""
     tools = ["Task", *agent_tools(name)]
     builtin = sorted({x.split("(")[0] for x in tools if not x.startswith("mcp__")})  # MCP 도구는 --tools가 아니라 허용 목록으로만
-    job = "시험: 스킬 {name}의 시험 할 일을 해라" if task == "시험" else f"{task} — 스킬 {name}의 새로 시작 할 일을 하고 이어서 시험까지 해라"
     system = (f"너는 대시보드가 띄운 담당 실행기다. CLAUDE.md의 처음 열었을 때 절차와 설정 점검은 하지 않는다. "
-              f'할 일은 하나: Task 도구를 subagent_type "{name}", prompt "{job.format(name=name)}"로 정확히 한 번, '
+              f'할 일은 하나: Task 도구를 subagent_type "{name}", prompt "{job}"로 정확히 한 번, '
               f"백그라운드 없이 부르고, 담당의 보고를 그대로 전한다. 다른 도구는 쓰지 않는다.")
-    with (d / "실행.jsonl").open("w") as f:
+    with log.open("w") as f:
         proc = subprocess.Popen([exe, "-p", "--model", "sonnet", "--no-session-persistence", "--permission-mode", "dontAsk",
                                  "--append-system-prompt", system, "--agents", json.dumps(agents_json(), ensure_ascii=False),
                                  "--tools", ",".join(builtin), "--allowedTools", ",".join(tools),
@@ -466,8 +566,7 @@ def start_agent_test(name, task="시험"):
                                 env=os.environ | {"DAILY_PAPER_TEST": "1"})  # 루프 훅은 시험 실행을 그날 판정으로 막지 않는다
     proc.stdin.write(task)
     proc.stdin.close()
-    AGENT_RUNS[name] = {"proc": proc, "started": time.time()}
-    return True, "시험을 시작했습니다"
+    return proc
 
 
 def notion_new_state():
@@ -660,6 +759,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, agent_test_status(name) if re.fullmatch(r"[\w-]+", name) else {"error": "이름"})
         if self.path == "/":
             return self.reply(200, PAGE.encode(), "text/html; charset=utf-8")
+        if self.path == "/api/library":
+            return self.reply(200, library_data())
         if self.path == "/api/state":
             return self.reply(200, state())
         self.reply(404, {"error": "없음"})
@@ -684,6 +785,11 @@ class Handler(BaseHTTPRequestHandler):
             if (ROOT / ".git").exists():
                 return self.reply(403, {"ok": False, "msg": "원본 저장소에서는 시험하지 않습니다. 작업공간 폴더에서 대시보드를 여세요"})
             ok, msg = start_agent_test(str(body.get("name", "")), str(body.get("task") or "시험"))
+            return self.reply(200 if ok else 409, {"ok": ok, "msg": msg})
+        if self.path == "/api/library/sync":
+            if (ROOT / ".git").exists():
+                return self.reply(403, {"ok": False, "msg": "원본 저장소에서는 동기화하지 않습니다. 작업공간 폴더에서 대시보드를 여세요"})
+            ok, msg = library_sync()
             return self.reply(200 if ok else 409, {"ok": ok, "msg": msg})
         if self.path == "/api/claude":
             return self.reply(200, claude_now(refresh=True))
@@ -897,6 +1003,90 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--surface2);border
  nav{flex-direction:row}nav button{padding:7px 10px}nav svg{display:none}
  aside{background:var(--side)}main{padding:22px 16px 110px}.g2,.two{grid-template-columns:1fr}.head h1{font-size:23px}
  table thead{display:none}table,tbody,tr,td{display:block;width:100%}tr{padding:10px 0;border-top:1px solid var(--line)}td{border:0;padding:2px 0}}
+/* 논문 서재: 디자인 design/dashboard_design의 따뜻한 종이·나무 책장. 다른 화면과 겹치지 않게 .lib 안에서만 */
+.lib{--paper:#F5F1E8;--paper2:#EDE7DA;--ink:#1F1B16;--ink2:#5B544A;--ink3:#8F877B;--rule:#D9D1C1;--red:#B4472F;--green:#2F5D50;--blue:#2C4A7A;
+ --serif:'Noto Serif KR','AppleMyungjo','Nanum Myeongjo',serif;--mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+ background:var(--paper);color:var(--ink);border-radius:var(--r);padding:22px 24px 28px;box-shadow:var(--shadow)}
+.lib-top{display:flex;justify-content:space-between;align-items:end;gap:14px;flex-wrap:wrap;border-bottom:3px double var(--ink);padding-bottom:12px}
+.lib-meta{font:500 12px var(--mono);color:var(--ink2);letter-spacing:.04em;display:flex;gap:14px;flex-wrap:wrap}
+.lib-top h2{font:900 40px/1 var(--serif);margin:8px 0 0;letter-spacing:-.03em}.lib-top h2 em{font-style:normal;color:var(--red)}
+.lib-sync{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.lib-sync small{font:12px var(--mono);color:var(--ink3)}
+.lib-run{background:var(--paper);color:var(--ink);border:1px solid var(--ink);padding:11px 20px;border-radius:999px;font-size:14px;font-weight:600;display:flex;gap:10px;align-items:center;cursor:pointer}
+.lib-run:disabled{opacity:.75;cursor:default}.lib-run i{width:8px;height:8px;border-radius:50%;background:var(--green)}
+.lib-run.busy i{animation:lbpulse 1s infinite}@keyframes lbpulse{50%{opacity:.2}}
+.lib-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:16px 0 22px}
+.lib-search{flex:1 1 240px;display:flex;align-items:center;gap:8px;border:1px solid var(--rule);background:#fff;border-radius:8px;padding:0 12px;height:40px;color:var(--ink3)}
+.lib-search input{border:none;outline:none;flex:1;font-size:14px;background:none;color:var(--ink);padding:0;box-shadow:none;min-width:0}
+.lib-search:focus-within{border-color:var(--ink)}
+.lseg{display:flex;border:1px solid var(--ink);border-radius:8px;overflow:hidden}
+.lseg button{background:#fff;border:none;padding:0 14px;height:38px;font-size:13px;font-weight:500;color:var(--ink2);cursor:pointer}
+.lseg button+button{border-left:1px solid var(--rule)}.lseg button[aria-pressed=true]{background:var(--ink);color:var(--paper)}
+.lib-err{background:#fbe9e4;color:#7e2e1c;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;white-space:pre-wrap}
+.desk{position:relative;margin:0 0 30px;padding:0 28px}
+.desk-l{position:absolute;right:28px;bottom:26px;text-align:right;font-size:13px;color:var(--ink2)}.desk-l b{display:block;font:700 18px var(--serif);color:var(--ink)}
+.stack{display:flex;flex-direction:column-reverse;gap:2px;padding-top:10px}
+.flat{height:30px;border-radius:2px 3px 3px 2px;display:flex;align-items:center;gap:12px;padding:0 14px;cursor:pointer;position:relative;max-width:calc(100% - 150px);box-shadow:inset 0 -3px 4px rgba(0,0,0,.18),inset 0 2px 0 rgba(255,255,255,.12),2px 2px 4px rgba(40,25,10,.2);transition:transform .2s}
+.flat:hover,.flat:focus-visible{transform:translateX(8px)}.flat .fb{position:absolute;top:0;bottom:0;left:22px;width:3px;opacity:.7}
+.flat .ft{font:700 12.5px var(--serif);margin-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.flat .fa{font:500 10px var(--mono);opacity:.75;margin-left:auto;white-space:nowrap}
+.desk-top{height:12px;margin:0 -28px;background:linear-gradient(#c9a77c,#a9855a);border-radius:3px;box-shadow:0 6px 10px rgba(60,40,20,.2)}
+.case{background:#3a2a1d;border-radius:6px;padding:26px 24px 8px;background-image:linear-gradient(90deg,rgba(0,0,0,.22),transparent 5%,transparent 95%,rgba(0,0,0,.22));box-shadow:0 0 0 8px #5a3f28,0 14px 30px rgba(40,25,10,.25);margin:8px}
+.shelf{margin-bottom:22px}
+.shelf-tag{display:inline-flex;gap:8px;align-items:center;font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:#e7d2ae;background:rgba(0,0,0,.25);padding:4px 10px;border-radius:3px;margin-bottom:10px}
+.shelf-tag b{color:#b9a07a;font-weight:500}.kw-dot{width:8px;height:8px;border-radius:2px;flex:none}
+.shelf-row{display:flex;align-items:flex-end;gap:3px;padding:14px 10px 0;min-height:220px;background:linear-gradient(#22180f,#35261a);overflow-x:auto}
+.shelf-empty{color:#8d7558;font:13px var(--serif);font-style:italic;align-self:center;padding:0 10px}
+.board{height:16px;background:linear-gradient(#a8784a,#7c5530);box-shadow:0 6px 10px rgba(0,0,0,.45)}
+.face-out{position:relative;flex:none;width:132px;margin-right:12px;cursor:pointer;display:flex;align-items:flex-end}
+.face-out .book{width:132px;padding:15px 13px 13px 18px}.face-out .book .bk-t{font-size:15px}.face-out .book .bk-kw{font-size:8px}.face-out .book .bk-a,.face-out .book .bk-no{font-size:9px}
+.face-out:hover .book,.face-out:focus-visible .book{transform:translateY(-6px) rotate(-1.5deg)}
+.nb{position:absolute;top:-8px;right:-6px;background:var(--red);color:#fff;font:700 10px var(--mono);padding:3px 6px;border-radius:2px;letter-spacing:.05em;box-shadow:0 2px 4px rgba(0,0,0,.3)}
+.lb-ghost{flex:none;width:28px;border-radius:2px;background:linear-gradient(90deg,#4a3828,#56412e);box-shadow:inset -3px 0 4px rgba(0,0,0,.25);opacity:.75}
+.shimmer{background:linear-gradient(90deg,#4a3828,#6a5038,#4a3828);background-size:200% 100%;animation:shim 1.2s linear infinite}@keyframes shim{to{background-position:-200% 0}}
+.bookend{flex:none;width:10px;height:120px;background:#8a6a45;border-radius:2px 2px 0 0;margin-left:6px}
+.lib-none{padding:40px 0;text-align:center;font:16px var(--serif);color:var(--ink3)}
+.book{width:62%;aspect-ratio:1/1.42;position:relative;border-radius:2px 4px 4px 2px;box-shadow:-1px 0 0 rgba(0,0,0,.15) inset,6px 8px 14px rgba(40,25,10,.35),1px 1px 0 rgba(255,255,255,.3) inset;overflow:hidden;display:flex;flex-direction:column;padding:10% 10% 9% 14%;transform-origin:bottom center;transition:transform .25s}
+.book::before{content:'';position:absolute;left:0;top:0;bottom:0;width:7%;background:linear-gradient(90deg,rgba(0,0,0,.28),rgba(255,255,255,.08) 60%,rgba(0,0,0,.08))}
+.book .bk-kw{font:700 7px var(--mono);letter-spacing:.12em;text-transform:uppercase;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.book .bk-t{font:700 13px/1.22 var(--serif);margin-top:8%;letter-spacing:-.01em;text-wrap:balance;overflow-wrap:anywhere}
+.book .bk-a{margin-top:auto;font:500 8px var(--sans);opacity:.85}.book .bk-no{font:700 7px var(--mono);opacity:.7;margin-top:3px;display:flex;justify-content:space-between}
+.book .bk-rule{height:1px;background:currentColor;opacity:.35;margin:7% 0 0}.book .bk-band{position:absolute;left:0;right:0;bottom:22%;height:5%;opacity:.9}
+.spine{flex:none;width:34px;border-radius:2px;cursor:pointer;position:relative;display:flex;flex-direction:column;align-items:center;padding:10px 0 8px;box-shadow:inset -3px 0 4px rgba(0,0,0,.2),inset 2px 0 0 rgba(255,255,255,.15);transition:transform .2s}
+.spine:hover,.spine:focus-visible{transform:translateY(-12px)}
+.spine .sp-t{writing-mode:vertical-rl;font:700 12px var(--serif);white-space:nowrap;overflow:hidden;flex:1;text-overflow:ellipsis}
+.spine .sp-y{font:700 8px var(--mono);opacity:.75;margin-top:6px}.spine .sp-b{position:absolute;left:0;right:0;height:3px;opacity:.6}
+.cover-group{margin-bottom:34px}.cover-h{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--rule);padding-bottom:6px;margin-bottom:14px}
+.cover-h h3{margin:0;font:700 13px var(--mono);letter-spacing:.08em;text-transform:uppercase}.cover-h span{font:12px var(--mono);color:var(--ink3)}
+.cover-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:26px 22px}
+.cg-item{cursor:pointer}.cg-stage{position:relative;background:var(--paper2);border-radius:4px;aspect-ratio:1/1.15;display:flex;align-items:center;justify-content:center}
+.cg-stage .book{width:64%}.cg-item:hover .book,.cg-item:focus-visible .book{transform:translateY(-4px) rotate(-1deg)}
+.cg-t{font:700 14px/1.35 var(--serif);margin-top:10px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cg-m{font:12px var(--mono);color:var(--ink3);margin-top:5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.lst{font:600 11px var(--mono);letter-spacing:.04em;padding:2px 7px;border-radius:3px;white-space:nowrap}
+.st-done{background:#e2ece6;color:var(--green)}.st-cand{background:#f6e6c8;color:#8a5a12}.st-read{background:#e1e7f1;color:var(--blue)}
+.ltip{position:fixed;z-index:99;background:#1f1b16;color:#f5f1e8;padding:12px 14px;border-radius:8px;max-width:300px;font-size:13px;line-height:1.5;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.ltip b{font:700 14px/1.35 'Noto Serif KR','AppleMyungjo',serif;display:block;margin-bottom:4px}.ltip i{display:block;color:#bdb4a4;font-style:normal;font-size:12px;margin-top:6px}
+.dr-veil{position:fixed;inset:0;background:rgba(31,27,22,.35);z-index:80}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:480px;max-width:100vw;z-index:81;overflow:auto;padding:28px 34px 40px;box-shadow:-10px 0 30px rgba(0,0,0,.2);border-radius:0;animation:lbslide .25s ease-out}
+@keyframes lbslide{from{transform:translateX(40px);opacity:0}}
+.dr-x{position:absolute;top:18px;right:20px;background:none;border:1px solid var(--rule);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--ink2);cursor:pointer}
+.dr-cover{background:var(--paper2);border-radius:6px;height:260px;display:flex;align-items:center;justify-content:center;margin:26px 0 20px}
+.dr-cover .book{width:150px;padding:18px 15px 15px 20px}.dr-cover .book .bk-t{font-size:17px}.dr-cover .book .bk-kw{font-size:9px}.dr-cover .book .bk-a,.dr-cover .book .bk-no{font-size:10px}
+.dr-k{font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.dr-t{font:700 24px/1.3 var(--serif);margin:8px 0 10px;letter-spacing:-.01em;text-wrap:balance}
+.dr-by{font-size:13px;color:var(--ink2);line-height:1.5}.dr-by b{color:var(--ink);font-weight:600}
+.lchips{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0}
+.lchip{font:500 12px var(--mono);padding:4px 9px;border-radius:4px;background:var(--paper2);border:1px solid var(--rule);color:var(--ink2)}
+.lchip.ok{color:var(--green);border-color:#bcd0c6;background:#e8efe9}.lchip.ev{background:#fff;color:var(--red);border-color:#e6c9bf}
+.dr-tldr{font:17px/1.65 var(--serif);border-left:3px solid var(--ink);padding-left:16px;margin:4px 0 14px}.dr-tldr.cand{font-style:italic;color:var(--ink3);border-color:#d9b65a}
+.stable{width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;margin-top:6px}
+.stable td{border-top:1px solid var(--rule);padding:11px 0;vertical-align:top;white-space:pre-line;background:none}.stable td:first-child{width:72px;font:700 13px var(--serif);color:var(--ink2)}
+.dr-actions{display:flex;gap:8px;margin-top:24px;flex-wrap:wrap}
+.dr-actions a{display:flex;align-items:center;gap:10px;padding:12px 16px;border:1px solid var(--rule);border-radius:8px;text-decoration:none;color:var(--ink);font-size:14px;background:#fff}
+.dr-actions a.nl{flex:1;border-color:var(--ink);font-weight:600}.dr-actions a.nl:hover{background:var(--ink);color:var(--paper)}
+.nl-ic{width:26px;height:26px;border:1.5px solid currentColor;border-radius:5px;display:grid;place-items:center;font:700 14px var(--serif)}
+.lib :focus-visible{outline:2px solid var(--red);outline-offset:2px}
+@media (max-width:640px){.lib{padding:16px}.lib-top h2{font-size:30px}.desk{padding:0}.desk-l{position:static;text-align:left;margin-bottom:6px}.flat{max-width:100%}.case{padding:18px 12px 4px}.drawer{padding:24px 18px 32px}}
+@media (prefers-reduced-motion:reduce){.lib *,.drawer{animation:none!important;transition:none!important}}
 </style></head><body>
 <div class="app"><aside>
  <div class="brand"><span class="mark">DP</span><div><b>매일 논문</b><small>The Daily Paper 관리</small></div></div>
@@ -911,6 +1101,7 @@ const ICONS={
  '담당 에이전트':'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
  '파일':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
  'DB 합치기':'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>',
+ '논문 서재':'<path d="M4 4h4v16H4zM10 4h4v16h-4z"/><path d="m16.5 5 3.8-1 3 15.4-3.8 1z"/>',
  '조테로':'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'};
 const icon=n=>{const s=document.createElement('span');s.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>`;return s.firstChild};
 let S,cur=null,dirty=false;
@@ -960,7 +1151,7 @@ const testOk=(n,cfg)=>!!(S.tests[n]&&S.tests[n].통과)&&testFresh(n,cfg);
 const testWhy=(n,cfg)=>{const r=S.tests[n];return !r?`아직 ${n} 시험을 하지 않았습니다. 아래 "시험 실행"을 누르세요.`:!testFresh(n,cfg)?'설정이 시험 뒤에 바뀌었습니다. 다시 시험하세요.'
  :!r.통과?'시험 실패:\n'+(r.항목||[]).filter(x=>!x.통과&&x.필수!==false).map(x=>`${x.이름}: ${x.설명||''}`).join('\n')+(r.제안?'\n제안: '+r.제안:''):''};
 const badLines=out=>(out||'').split('\n').filter((l,i,a)=>/^(❌|⛔)/.test(l.trim())||(/^\s*→/.test(l)&&/^❌/.test((a[i-1]||'').trim()))).join('\n');
-const DAILY=['현황','실행 기록','조테로'],EXTRA=['파일','담당 에이전트','DB 합치기'],ALWAYS_OPEN=['파일'];  // 파일은 처음 설정 중에도 연다(스킬을 고치며 설정)
+const DAILY=['현황','논문 서재','실행 기록','조테로'],EXTRA=['파일','담당 에이전트','DB 합치기'],ALWAYS_OPEN=['파일'];  // 파일은 처음 설정 중에도 연다(스킬을 고치며 설정)
 const stepIdx=k=>STEPS.findIndex(s=>s.k===k);
 const lockedBy=k=>{const i=stepIdx(k);const s=i<0?null:STEPS.slice(0,i).find(s=>!s.done());return s?s.k:null};
 const nextTodo=()=>(STEPS.find(s=>!s.done())||{}).k;  // 처음으로 안 끝난 단계. 그 뒤 단계는 모두 잠긴다
@@ -1091,6 +1282,86 @@ function filesPage(){const list=el('div',{className:'list'}),ed=el('div',{classN
     b.dataset.path=f.path;const h=f.group!==g?[el('h3',{className:'subh',style:'margin:12px 8px 4px'},g=f.group)]:[];return [...h,b]}));
   open(FILESEL&&files.some(f=>f.path===FILESEL)?FILESEL:files[0].path)});
  return [el('div',{className:'fgrid'},card('파일','위치와 설명. 눌러서 열기',el('div',{className:'flist'},list)),ed)]}
+// 논문 서재: 노션 아카이브를 책장으로. 로컬 매일 기록으로 그리고 "노션과 동기화"로 상태·노션 주소를 받아 온다(디자인 design/dashboard_design)
+const lsGet=(k,d)=>{try{return localStorage.getItem(k)||d}catch(e){return d}},lsSet=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+const LIB={group:lsGet('lib_group','kw'),mode:lsGet('lib_mode','case'),q:'',d:null};
+const hashN=(s,m)=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%m};
+// 키워드 순서대로 노션 키워드 색(red → green → blue → orange → purple → pink → brown)에 맞춘 책 색
+const PAL=[[{bg:'#B4472F',fg:'#FBEFE4',band:'#1F1B16'},{bg:'#E9DCC6',fg:'#7E2E1C',band:'#B4472F'},{bg:'#5A2318',fg:'#F2D9C2',band:'#E08A5E'},{bg:'#D9714F',fg:'#2A130C',band:'#FBEFE4'}],
+ [{bg:'#2F5D50',fg:'#EEF2E6',band:'#D9B65A'},{bg:'#DCE5D6',fg:'#21433A',band:'#2F5D50'},{bg:'#1C3830',fg:'#D9E4CF',band:'#8FB59E'}],
+ [{bg:'#2C4A7A',fg:'#EEF0F5',band:'#E2B04A'},{bg:'#E3E6EE',fg:'#1E3358',band:'#2C4A7A'},{bg:'#16233C',fg:'#D7DEEC',band:'#6F8FC4'}],
+ [{bg:'#C77B2E',fg:'#FFF4E6',band:'#3A2410'},{bg:'#F1DFC4',fg:'#6E3F12',band:'#C77B2E'}],
+ [{bg:'#6B4C8A',fg:'#F2ECF7',band:'#D9B65A'},{bg:'#E5DDEE',fg:'#4A2F66',band:'#6B4C8A'}],
+ [{bg:'#B5536F',fg:'#FBEEF2',band:'#3B1622'},{bg:'#F1DCE2',fg:'#7A2C43',band:'#B5536F'}],
+ [{bg:'#7A5A3A',fg:'#F5ECE0',band:'#D9B65A'},{bg:'#E6DACB',fg:'#4E3720',band:'#7A5A3A'}]];
+const kwIdx=k=>Math.max(0,LIB.d.keywords.indexOf(k));
+const pal=p=>{const l=PAL[kwIdx(p.kw)%PAL.length];return l[hashN(p.id,l.length)]};
+const kwColor=k=>PAL[kwIdx(k)%PAL.length][0].bg;
+const ST_COLOR={'후보':'#8a5a12','읽는 중':'#2C4A7A','요약 완료':'#2F5D50'};
+const stTag=s=>el('span',{className:'lst '+(s==='요약 완료'?'st-done':s==='읽는 중'?'st-read':'st-cand')},s);
+const nos=n=>String(n).padStart(3,'0');
+function bookCover(p){const c=pal(p);return el('div',{className:'book',style:`background:${c.bg};color:${c.fg}`},el('div',{className:'bk-kw'},p.kw),el('div',{className:'bk-rule'}),
+ el('div',{className:'bk-t'},p.short),el('div',{className:'bk-band',style:`background:${c.band}`}),el('div',{className:'bk-a'},p.authorShort),
+ el('div',{className:'bk-no'},el('span',{},'NO.'+nos(p.issue)),el('span',{},String(p.year||''))))}
+let TIP=null;
+const tipOn=(e,p)=>{tipOff();const r=e.currentTarget.getBoundingClientRect();
+ TIP=el('div',{className:'ltip',role:'tooltip'},el('b',{},p.title),p.tldr,el('i',{},[p.authorShort,p.venue,'NO.'+nos(p.issue)].filter(Boolean).join(' · ')));
+ TIP.style.left=Math.max(8,Math.min(r.right+12,innerWidth-320))+'px';TIP.style.top=Math.max(70,r.top-10)+'px';document.body.append(TIP)};
+const tipOff=()=>{if(TIP)TIP.remove();TIP=null};
+// 책 하나를 누를 수 있게(마우스·키보드): 누르면 서랍, 올리면 말풍선
+const bookBtn=(node,p)=>{Object.assign(node,{tabIndex:0,onclick:()=>openBook(p),onkeydown:e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openBook(p)}},
+ onmouseenter:e=>tipOn(e,p),onmouseleave:tipOff,onfocus:e=>tipOn(e,p),onblur:tipOff});node.setAttribute('role','button');node.setAttribute('aria-label',p.title);return node};
+function openBook(p){tipOff();const back=document.activeElement;
+ const close=()=>{veil.remove();dr.remove();removeEventListener('keydown',esc);if(back)back.focus()},esc=e=>{if(e.key==='Escape')close()};
+ const veil=el('div',{className:'dr-veil',onclick:close}),x=el('button',{className:'dr-x',onclick:close},'닫기 ✕');
+ const link=(cls,href,...kids)=>href?el('a',{className:cls,href,target:'_blank',rel:'noopener'},...kids):null;
+ const dr=el('aside',{className:'lib drawer',role:'dialog',ariaModal:'true',ariaLabel:p.title},x,el('div',{className:'dr-cover'},bookCover(p)),
+  el('div',{className:'dr-k',style:`color:${kwColor(p.kw)}`},`${p.kw} · NO.${nos(p.issue)}`),el('h2',{className:'dr-t'},p.title),
+  el('div',{className:'dr-by'},el('b',{},p.authors),` — ${p.year||''} · ${p.venue}`),
+  el('div',{className:'lchips'},stTag(p.status),p.zotero?el('span',{className:'lchip ok'},'✓ 조테로 저장'):null,p.oa?el('span',{className:'lchip'},'오픈 액세스'):null,
+   ...p.ev.map(e=>el('span',{className:'lchip ev'},'근거 '+e))),
+  p.tldr?el('p',{className:'dr-tldr'+(p.status==='후보'?' cand':'')},p.tldr):null,
+  p.table.length?el('table',{className:'stable'},el('tbody',{},...p.table.map(([a,b])=>el('tr',{},el('td',{},a),el('td',{},b))))):null,
+  el('div',{className:'dr-actions'},link('nl',p.notion,el('span',{className:'nl-ic'},'N'),'노션 페이지 열기'),link('',p.oa,'원문 PDF'),link('',p.url,'DOI · 출처')),
+  p.notion?null:el('p',{className:'desc',style:'margin-top:10px'},'노션 페이지 주소는 "노션과 동기화" 뒤에 생깁니다.'));
+ addEventListener('keydown',esc);document.body.append(veil,dr);x.focus()}
+function libPage(){const root=el('div',{className:'lib'});
+ const draw=()=>{const D=LIB.d,q=LIB.q.toLowerCase(),sy=D.sync||{};
+  const papers=D.papers.filter(p=>!q||[p.title,p.authors,p.venue,p.tldr].join(' ').toLowerCase().includes(q)),reading=papers.filter(p=>p.status==='읽는 중');
+  const groups=LIB.group==='kw'?D.keywords.map(k=>({id:k,label:k,color:kwColor(k),items:papers.filter(p=>p.kw===k)}))
+   :LIB.group==='status'?['후보','읽는 중','요약 완료'].map(s=>({id:s,label:s,color:ST_COLOR[s],items:papers.filter(p=>p.status===s)}))
+   :D.issues.map(i=>({id:'i'+i.no,label:`NO.${nos(i.no)} · ${i.date}`,color:'#1F1B16',items:papers.filter(p=>p.issue===i.no)}));
+  const sync=el('button',{className:'lib-run'+(sy.running?' busy':''),disabled:!!sy.running||S.readonly,onclick:async()=>{
+   const r=await post('/api/library/sync',{});if(!r.ok)toast(r.msg);await fetchLib()}},el('i'),sy.running?`노션에서 읽는 중… ${sy.secs}초`:'노션과 동기화');
+  const seg=(key,opts)=>el('div',{className:'lseg',role:'group'},...opts.map(([v,l])=>el('button',{type:'button',ariaPressed:String(LIB[key]===v),onclick:()=>{LIB[key]=v;lsSet('lib_'+key,v);draw()}},l)));
+  const search=el('input',{type:'search',value:LIB.q,placeholder:'제목 · 저자 · 저널 · 요약에서 찾기',ariaLabel:'서재 검색',oninput:e=>{LIB.q=e.target.value;draw();const s=root.querySelector('.lib-search input');s.focus();s.setSelectionRange(s.value.length,s.value.length)}});
+  const shelves=sy.running?el('section',{className:'case',ariaBusy:'true'},...[0,1,2].map(s=>el('div',{className:'shelf'},el('div',{className:'shelf-tag',style:'opacity:.4'},'불러오는 중'),
+    el('div',{className:'shelf-row'},...Array.from({length:9},(_,i)=>el('div',{className:'lb-ghost shimmer',style:`height:${150+hashN('s'+s+i,40)}px`}))),el('div',{className:'board'}))))
+   :LIB.mode==='case'?el('section',{className:'case'},...groups.map(g=>{const face=g.items.filter(p=>p.isNew).slice(0,2),spines=g.items.filter(p=>!face.includes(p));
+    return el('div',{className:'shelf'},el('div',{className:'shelf-tag'},el('span',{className:'kw-dot',style:`background:${g.color}`}),g.label,el('b',{},String(g.items.length))),
+     el('div',{className:'shelf-row'},g.items.length?null:el('div',{className:'shelf-empty'},'아직 꽂힌 논문이 없습니다'),
+      ...face.map(p=>bookBtn(el('div',{className:'face-out'},bookCover(p),el('span',{className:'nb'},'NEW')),p)),
+      ...spines.map(p=>{const c=pal(p);return bookBtn(el('div',{className:'spine',style:`height:${168+hashN(p.id,34)}px;background:${c.bg};color:${c.fg}`},
+       el('span',{className:'sp-b',style:`top:18px;background:${c.band}`}),el('span',{className:'sp-b',style:`bottom:30px;background:${c.band}`}),
+       el('span',{className:'sp-t'},p.short),el('span',{className:'sp-y'},String(p.year||'').slice(-2))),p)}),
+      ...(g.items.length?Array.from({length:Math.max(0,6-g.items.length)},(_,i)=>el('div',{className:'lb-ghost',style:`height:${150+hashN(g.id+i,30)}px`})):[]),
+      g.items.length?el('div',{className:'bookend'}):null),el('div',{className:'board'}))}))
+   :el('section',{},...groups.filter(g=>g.items.length).map(g=>el('div',{className:'cover-group'},el('div',{className:'cover-h'},el('h3',{style:`color:${g.color}`},g.label),el('span',{},g.items.length+'권')),
+    el('div',{className:'cover-grid'},...g.items.map(p=>bookBtn(el('div',{className:'cg-item'},el('div',{className:'cg-stage'},bookCover(p),p.isNew?el('span',{className:'nb'},'NEW'):null),
+     el('div',{className:'cg-t'},p.title),el('div',{className:'cg-m'},`${p.authorShort} · NO.${nos(p.issue)}`,stTag(p.status))),p))))));
+  root.replaceChildren(...[el('div',{className:'lib-top'},el('div',{},el('div',{className:'lib-meta'},el('span',{},'LIBRARY'),el('span',{},'노션 · 논문 아카이브'),el('span',{},D.papers.length+'권')),
+    el('h2',{},'논문 ',el('em',{},'서재'))),el('div',{className:'lib-sync'},sync,el('small',{},D.synced?`마지막 동기화 · ${D.synced}`:'아직 동기화하지 않음 · 로컬 기록으로 보는 중'))),
+   el('div',{className:'lib-bar'},el('label',{className:'lib-search'},el('span',{ariaHidden:'true'},'⌕'),search),
+    seg('group',[['kw','키워드별'],['status','읽기 상태별'],['issue','호별']]),seg('mode',[['case','책장'],['grid','표지']])),
+   !sy.running&&sy.error?el('div',{className:'lib-err',role:'alert'},'동기화 실패: '+sy.error):null,
+   LIB.group==='kw'&&reading.length&&!sy.running?el('section',{className:'desk'},el('div',{className:'desk-l'},el('b',{},'책상 위'),el('span',{},`읽는 중 ${reading.length}권`)),
+    el('div',{className:'stack'},...reading.map((p,i)=>{const c=pal(p);return bookBtn(el('div',{className:'flat',style:`background:${c.bg};color:${c.fg};width:${300-i*18}px;margin-left:${i*14}px`},
+     el('span',{className:'fb',style:`background:${c.band}`}),el('span',{className:'ft'},p.short),el('span',{className:'fa'},p.authorShort)),p)})),el('div',{className:'desk-top'})):null,
+   D.papers.length?shelves:el('div',{className:'lib-none'},'아직 서재에 논문이 없습니다. 현황에서 "지금 논문 찾기"를 하면 꽂힙니다.'),
+   q&&!papers.length?el('div',{className:'lib-none'},`“${LIB.q}”에 맞는 논문이 서재에 없습니다.`):null].filter(Boolean))};
+ const fetchLib=async()=>{LIB.d=await fetch('/api/library').then(r=>r.json());if(!root.isConnected&&LIB.d.sync.running)return;draw();
+  clearTimeout(LIB.t);if(LIB.d.sync.running)LIB.t=setTimeout(fetchLib,2000)};
+ root.append(waitBox('서재를 여는 중…'));fetchLib();return root}
 const PAGES={
  'Claude Code 로그인':{r(){const d=S.checks.claude||{},again=el('button',{className:'btn ghost',type:'button',onclick:async()=>{again.disabled=true;await post('/api/claude',{});await load()}},'다시 확인');
   return [card('이 컴퓨터의 Claude Code',d.at?`${d.at}에 확인`:'',
@@ -1170,6 +1441,7 @@ const PAGES={
     d.stopped?el('p',{className:'desc',style:'color:var(--bad)'},'멈춤 이유: '+d.stopped):null,
     d.fails.length?el('details',{},el('summary',{},`판정 실패 ${d.fails.length}개 보기`),el('pre',{},d.fails.join('\n'))):null)})}},
 
+ '논문 서재':{t:'논문 서재',d:'노션 아카이브에 쌓인 논문을 책장으로 봅니다. 로컬 매일 기록으로 그리고, "노션과 동기화"를 누르면 notion-publisher가 아카이브를 읽어 읽기 상태·노션 링크를 맞춥니다(노션은 읽기만).',r(){return [libPage()]}},
  '조테로':{t:'조테로',d:'조테로 보관함을 둘러봅니다. 읽기만 하고 고치지 않습니다.',r(){
   const side=el('div',{className:'zside'}),list=el('div'),q=el('input',{type:'search',placeholder:'제목·저자·연도로 찾기',value:Z.q,ariaLabel:'조테로 검색',style:'flex:1;width:auto;min-width:0'});
   const fail=e=>list.replaceChildren(el('div',{className:'guide'},el('h4',{},'조테로에 연결하지 못했습니다'),el('p',{className:'why'},String(e.message||e)),
@@ -1418,6 +1690,9 @@ def selftest():
     assert file_get("../../etc/passwd")[0] == 404 and file_get(".claude/agents/../../x")[0] == 404
     assert not file_save("scripts/대시보드.py", "x", None)[0] and not file_save(".claude/skills/paper-scout/SKILL.md", "---\nname: 다른\n---", None)[0]
     assert not file_save("CLAUDE.md", "x", 1)[0]  # 열어 둔 뒤 바뀜(mtime 다름)
+    assert md_fields("- 서지: x\n- 결과:\n  - 첫째 (§5.5)\n  - 둘째\n- 저자가 밝힌 한계: 없음") == {"결과": "- 첫째 (§5.5)\n- 둘째", "저자가 밝힌 한계": "없음"}
+    assert short_title("A Study: Long Subtitle") == "A Study" and len(short_title("x" * 40)) == 30
+    assert author_short(["Ann Lee", "B C"]) == "Lee 외" and author_short(["Ann Lee"]) == "Lee" and author_short([""]) == ""
     print("자체시험 통과")
 
 

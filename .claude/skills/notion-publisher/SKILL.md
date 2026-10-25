@@ -17,11 +17,11 @@ description: 매일 논문 결과를 본인 노션 The Daily Paper에 올리는 
 | `notion_url` | 표지 페이지 주소(The Daily Paper) |
 | `notion_db_url` | 표지 안의 "논문 아카이브" 데이터베이스 주소 |
 
-노션 도구(fetch, notion-create-pages, notion-update-page, notion-update-data-source, notion-create-database, notion-create-view, notion-update-view)가 안 보이면 ToolSearch로 이름(예: `notion-create-pages`)을 찾아 불러온다.
+노션 도구(fetch, notion-create-pages, notion-update-page, notion-update-data-source, notion-create-database, notion-create-view, notion-update-view, query-data-sources)가 안 보이면 ToolSearch로 이름(예: `notion-create-pages`)을 찾아 불러온다.
 
 ## 공통 규칙
 
-- 노션의 정해진 두 곳(아카이브 데이터베이스, 그 부모인 표지 페이지)에만 쓴다. 다른 페이지는 고치지 않는다. 폴더의 파일은 고치지 않는다(새로 시작의 `매일논문/시험/notion-publisher/새로시작.json`, 시험의 결과.json만 쓴다). `설정/notion-publisher.json`은 담당이 쓰지 않는다 — 새로 시작 뒤 시험이 통과하면 대시보드(또는 메인)가 옮긴다.
+- 노션의 정해진 두 곳(아카이브 데이터베이스, 그 부모인 표지 페이지)에만 쓴다. 다른 페이지는 고치지 않는다. 폴더의 파일은 고치지 않는다(새로 시작의 `매일논문/시험/notion-publisher/새로시작.json`, 시험의 결과.json, 서재 내보내기의 `매일논문/서재.json`만 쓴다). `설정/notion-publisher.json`은 담당이 쓰지 않는다 — 새로 시작 뒤 시험이 통과하면 대시보드(또는 메인)가 옮긴다.
 - 모든 논문에 요약 기준(원문 PDF / 웹 본문 / 초록) 표시를 남긴다. 사람이 원문을 확인하기 전에는 초안의 근거가 아니다.
 - 값은 `목록.json`과 `D*.md`에 있는 것만 쓴다. 없는 값은 지어내지 않고 칸을 비운다.
 - 조테로를 쓰지 않으면(`설정/zotero-keeper.json`의 `사용`이 false) 조테로 표시(저장·미저장)를 모두 빼고, 아카이브 "조테로 저장" 칸은 비워 둔다.
@@ -102,3 +102,25 @@ description: 매일 논문 결과를 본인 노션 The Daily Paper에 올리는 
 
 - 실패한 항목의 설명에는 무엇이 다른지와 고칠 방법을 한 줄로 적는다. 앞 항목이 실패해 확인 못 한 항목은 "확인 못 함"으로 실패다.
 - `통과`는 필수 항목이 모두 통과일 때만 true다.
+
+## 할 일 D · 서재 내보내기 (대시보드의 "노션과 동기화"가 "서재 내보내기"를 맡길 때)
+
+노션 아카이브를 **읽기만** 해서 대시보드 「논문 서재」가 쓸 `매일논문/서재.json`을 만든다. 노션에는 아무것도 쓰지 않고, 아카이브 맞추기도 하지 않는다.
+
+1. `설정/notion-publisher.json`의 `notion_db_url`을 fetch해 아카이브의 표 보기(이름 "표", 없으면 아무 표 보기) 주소를 찾는다.
+2. query-data-sources를 `{"mode": "view", "view_url": "{그 보기 주소}"}`로 불러 모든 줄을 읽는다. 다음 쪽이 있으면 끝까지 읽는다.
+3. 줄마다 아래 칸만 옮겨 `매일논문/서재.json`에 쓴다(Write). 없는 값은 빈 글자·null로 두고 지어내지 않는다. 제목이 `[시험]`으로 시작하는 줄은 뺀다.
+
+```json
+{
+  "아카이브": "{notion_db_url}",
+  "논문": [
+    {"제목": "", "짧은 제목": "", "저자": "", "저자 약칭": "", "상태": "후보|읽는 중|요약 완료", "호": 2, "날짜": "YYYY-MM-DD",
+     "키워드": "", "결과 한 줄": "", "근거": ["§5.5"], "출처": "", "연도": 2026, "원문": "", "오픈 액세스": "", "조테로 저장": true,
+     "url": "그 줄의 노션 페이지 주소"}
+  ]
+}
+```
+
+- `날짜`는 날짜 칸의 시작일, `근거`는 다중 선택 값의 목록이다.
+- 보고는 한두 줄: 읽은 줄 수와 상태별 수. 읽지 못하면 이유를 보고하고 파일을 쓰지 않는다.
