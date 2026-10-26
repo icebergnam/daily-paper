@@ -225,6 +225,23 @@ def library_data():
             "synced": time.strftime("%m.%d %H:%M", time.localtime(LIB_FILE.stat().st_mtime)) if lib else "", "sync": library_sync_status()}
 
 
+ICLOUD = pathlib.Path.home() / "Library/Mobile Documents/com~apple~CloudDocs"  # 아이폰 앱(ios/)이 읽는 본인 iCloud Drive
+
+
+def library_export(d):
+    """아이폰 앱용: 서재 데이터를 iCloud Drive/DailyPaper/library.json에 둔다. iCloud Drive가 켜진 Mac에서만, 내용이 바뀔 때만."""
+    if not ICLOUD.is_dir():
+        return
+    f = ICLOUD / "DailyPaper/library.json"
+    text = json.dumps({k: v for k, v in d.items() if k != "sync"}
+                      | {"period": read_json(SCOUT_FILE, {}).get("기간_일") or 30, "schedule": schedule_get()}, ensure_ascii=False)
+    if not f.exists() or f.read_text() != text:
+        f.parent.mkdir(exist_ok=True)
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(text)
+        tmp.replace(f)
+
+
 def library_sync():
     """노션과 동기화: notion-publisher에게 '서재 내보내기'를 맡긴다(노션은 읽기만, 쓰는 것은 workspace/매일논문/서재.json 하나)."""
     if (p := LIB_RUN.get("proc")) and p.poll() is None:
@@ -782,7 +799,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/":
             return self.reply(200, PAGE.encode(), "text/html; charset=utf-8")
         if self.path == "/api/library":
-            return self.reply(200, library_data())
+            library_export(d := library_data())
+            return self.reply(200, d)
         if self.path == "/api/state":
             return self.reply(200, state())
         self.reply(404, {"error": "없음"})
@@ -1824,6 +1842,14 @@ def selftest():
         assert file_get(rel)[1]["mine"] and file_get(rel)[1]["text"].endswith("내 사본")
         assert file_reset(rel)[0] and not (MINE / rel).exists() and not file_reset(rel)[0]
     DATA, MINE, BACKUP = keep
+    global ICLOUD  # 아이폰 앱 내보내기: 바뀔 때만 쓰고 sync는 빼고 예약·기간을 붙인다
+    keep = ICLOUD
+    with tempfile.TemporaryDirectory() as t:
+        ICLOUD = pathlib.Path(t); f = ICLOUD / "DailyPaper/library.json"
+        library_export({"papers": [], "sync": {}}); m = f.stat().st_mtime_ns
+        assert set(json.loads(f.read_text())) == {"papers", "period", "schedule"}
+        library_export({"papers": [], "sync": {"running": True}}); assert f.stat().st_mtime_ns == m
+    ICLOUD = keep
     print("자체시험 통과")
 
 
@@ -1833,7 +1859,9 @@ if __name__ == "__main__":
     elif sys.argv[1:2] == ["매일실행"]:  # 예약(launchd)이 부른다: 스킬 daily-paper를 끝까지 돌리고 끝난다
         ok, msg = start_run(extra=sys.argv[2:] == ["추가"])
         print(msg)
-        sys.exit(RUN["proc"].wait() if ok else 1)
+        code = RUN["proc"].wait() if ok else 1
+        library_export(library_data())
+        sys.exit(code)
     else:
         port = int(sys.argv[1]) if len(sys.argv) > 1 else 9008
         url = f"http://127.0.0.1:{port}"
