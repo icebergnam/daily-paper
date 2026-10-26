@@ -2,7 +2,7 @@ import SwiftUI
 import CoreText
 import UniformTypeIdentifiers
 
-// 데일리 페이퍼 읽기 전용 앱: Mac 대시보드가 iCloud Drive/DailyPaper/library.json에 내보낸 서재 데이터(library_data()와 같은 모양)를 읽는다.
+// 데일리 페이퍼 읽기 전용 앱: Mac 대시보드가 iCloud Drive/DailyPaper/dailypaper.json에 내보낸 서재 데이터(library_data()와 같은 모양)를 읽는다.
 @main struct DailyPaperApp: App {
     init() {  // 앱에 넣은 글꼴(예: Noto Serif KR)을 등록한다. 없으면 시스템 글꼴로 그린다
         for ext in ["ttf", "otf"] {
@@ -46,7 +46,7 @@ struct Paper: Decodable, Identifiable, Hashable {
 @Observable final class Store {
     var lib: Library?
     var error: String?
-    private let cache = URL.documentsDirectory.appending(path: "library.json")  // 마지막으로 읽은 것: iCloud에 닿지 않아도 연다
+    private let cache = URL.documentsDirectory.appending(path: "dailypaper.json")  // 마지막으로 읽은 것: iCloud에 닿지 않아도 연다
 
     init() {
         if let d = try? Data(contentsOf: cache) { lib = try? JSONDecoder().decode(Library.self, from: d) }
@@ -133,12 +133,12 @@ struct RootView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("DAILY PAPER").font(mono(12, .medium)).foregroundStyle(Ink.ink2)
             Text("논문 \(Text("신문").foregroundStyle(Ink.red))").font(serif(40, .black))
-            Text("Mac 대시보드가 iCloud Drive의 DailyPaper 폴더에 서재 파일(library.json)을 만들어 둡니다. 그 파일을 한 번 고르면 이 앱이 읽어 옵니다.")
+            Text("Mac 대시보드가 iCloud Drive의 DailyPaper 폴더에 서재 파일(dailypaper.json)을 만들어 둡니다. 그 파일을 한 번 고르면 이 앱이 읽어 옵니다.")
                 .font(.system(size: 15)).foregroundStyle(Ink.ink2).lineSpacing(4)
             Text("파일이 없으면 Mac에서 대시보드를 켜고 오늘 호나 논문 서재를 한 번 열어 주세요.")
                 .font(.system(size: 13)).foregroundStyle(Ink.ink3)
             Button { picking = true } label: {
-                Text("iCloud Drive에서 library.json 고르기").font(.system(size: 15, weight: .semibold))
+                Text("iCloud Drive에서 dailypaper.json 고르기").font(.system(size: 15, weight: .semibold))
                     .padding(.horizontal, 20).padding(.vertical, 12).background(Ink.ink, in: Capsule()).foregroundStyle(Ink.paper)
             }
             if let e = store.error { Text(e).font(.system(size: 13)).foregroundStyle(Color(hex: 0x7E2E1C)) }

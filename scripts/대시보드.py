@@ -229,10 +229,10 @@ ICLOUD = pathlib.Path.home() / "Library/Mobile Documents/com~apple~CloudDocs"  #
 
 
 def library_export(d):
-    """아이폰 앱용: 서재 데이터를 iCloud Drive/DailyPaper/library.json에 둔다. iCloud Drive가 켜진 Mac에서만, 내용이 바뀔 때만."""
+    """아이폰 앱용: 서재 데이터를 iCloud Drive/DailyPaper/dailypaper.json에 둔다(폴더가 없으면 만든다). iCloud Drive가 켜진 Mac에서만, 내용이 바뀔 때만."""
     if not ICLOUD.is_dir():
         return
-    f = ICLOUD / "DailyPaper/library.json"
+    f = ICLOUD / "DailyPaper/dailypaper.json"
     text = json.dumps({k: v for k, v in d.items() if k != "sync"}
                       | {"period": read_json(SCOUT_FILE, {}).get("기간_일") or 30, "schedule": schedule_get()}, ensure_ascii=False)
     if not f.exists() or f.read_text() != text:
@@ -1845,7 +1845,7 @@ def selftest():
     global ICLOUD  # 아이폰 앱 내보내기: 바뀔 때만 쓰고 sync는 빼고 예약·기간을 붙인다
     keep = ICLOUD
     with tempfile.TemporaryDirectory() as t:
-        ICLOUD = pathlib.Path(t); f = ICLOUD / "DailyPaper/library.json"
+        ICLOUD = pathlib.Path(t); f = ICLOUD / "DailyPaper/dailypaper.json"
         library_export({"papers": [], "sync": {}}); m = f.stat().st_mtime_ns
         assert set(json.loads(f.read_text())) == {"papers", "period", "schedule"}
         library_export({"papers": [], "sync": {"running": True}}); assert f.stat().st_mtime_ns == m
