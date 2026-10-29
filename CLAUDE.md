@@ -42,7 +42,7 @@
 |---|---|
 | 매일 논문, "오늘 논문 찾아 줘" (대시보드의 지금 논문 찾기·매일 예약도 이 줄을 따른다) | 스킬 `daily-paper`의 순서를 그대로 따른다(설정 점검 → paper-scout 검색 → `매일논문.py 저장` → zotero-keeper(선택) → paper-scout 본문 → paper-reader(선택, 병렬) → 다이제스트 → 판정 루프 → privacy-guard → notion-publisher → 알림). 판정 루프는 훅 `.claude/hooks/매일논문_루프.py`가 노션 호출 전·끝내기 전에 강제한다 |
 | "오늘 논문 더 찾아 줘" | 스킬 `daily-paper`를 인자 `추가`로 따른다(오늘 이미 받았어도 설정 편수만큼 **더**, ID는 이어서) |
-| "노션에 올려 줘" | 가장 최근 날짜 폴더에서 `privacy-guard` → "통과"면 `notion-publisher`(새로 올릴 ID = `목록.json`의 ID 중 `노션올림.txt`에 없는 것) → 성공하면 그 ID를 `노션올림.txt`에 더하고 `노션완료.txt` |
+| "노션에 올려 줘" | 가장 최근 날짜 폴더에서 `privacy-guard` → "통과"면 `notion-publisher`(새로 올릴 ID = `목록.json`의 ID 중 `노션올림.txt`에 없는 것) → 성공하면 그 ID를 `노션올림.txt`에 더하고 `노션완료.txt`를 쓴 뒤 `python3 scripts/대시보드.py 내보내기`(아이폰 앱용 iCloud 서재 파일) |
 | "설정해 줘", "설치 도와줘", 설정 점검 실패 | `workspace/설정/`이 없으면 `시작하기.md`, 있으면 5절 설정 도우미 |
 | "노션 새로 시작: {페이지 주소}" | `notion-publisher`에 "새로 시작: {페이지 주소}"를 맡긴다(스킬의 새로 시작 → 시험). 시험이 **통과하면** 메인이 `workspace/매일논문/시험/notion-publisher/새로시작.json`의 두 주소를 `workspace/설정/notion-publisher.json`에 옮긴다(실패하면 지금 설정 그대로). 페이지에 다른 내용이 있으면 먼저 사용자에게 덮어써도 되는지 묻고, 허락하면 " 덮어쓰기 허락"을 붙인다 |
 | "노션 DB 합치기: 소스 {주소} → 타겟 {주소}" (대시보드가 만들어 준 문장) | 6절 DB 합치기 |

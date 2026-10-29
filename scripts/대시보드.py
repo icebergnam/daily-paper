@@ -3,6 +3,7 @@
 사용: python3 scripts/대시보드.py [포트]   (기본 9008, 이 컴퓨터에서만 열림: http://127.0.0.1:9008)
       python3 scripts/대시보드.py 자체시험
       python3 scripts/대시보드.py 매일실행 [추가]   스킬 daily-paper를 한 번 끝까지 돌린다(매일 예약이 부른다)
+      python3 scripts/대시보드.py 내보내기   아이폰 앱용 서재 파일을 iCloud Drive에 쓴다(노션에 올린 뒤 메인이 부른다)
 코드는 이 저장소, 내 설정·결과는 workspace/(설정/·매일논문/·내사본/)에만 쓴다. 담당·스킬 글을 화면에서 고치면 workspace/내사본/에 사본으로 저장한다.
 담당 시험·새로 시작·매일 실행은 이 컴퓨터의 Claude Code(claude -p)로 담당을 부른다. 조테로 탐색은 읽기만 한다.
 """
@@ -394,7 +395,7 @@ def help_answer(step, detail, question):
 RUN = {"proc": None, "log": OUT / "실행.jsonl", "started": None}  # 지금 실행은 한 번에 하나만
 # 매일 실행의 메인(스킬 daily-paper)이 직접 쓰는 도구. 담당들의 도구는 담당 파일에서 더한다
 DAILY_TOOLS = ["Task", "Read", "Glob", "Write", "Bash(python3 scripts/설정점검.py:*)", "Bash(python3 scripts/매일논문.py 저장:*)",
-               "Bash(python3 scripts/매일논문_판정.py:*)", "Bash(osascript -e:*)"]
+               "Bash(python3 scripts/매일논문_판정.py:*)", "Bash(python3 scripts/대시보드.py 내보내기)", "Bash(osascript -e:*)"]
 
 
 def daily_cmd():
@@ -1856,6 +1857,9 @@ def selftest():
 if __name__ == "__main__":
     if sys.argv[1:] == ["자체시험"]:
         selftest()
+    elif sys.argv[1:] == ["내보내기"]:  # 노션 올리기가 성공하면 메인(스킬 daily-paper 11단계·"노션에 올려 줘")이 부른다
+        library_export(library_data())
+        print(f"{ICLOUD / 'DailyPaper/dailypaper.json'}에 썼습니다" if ICLOUD.is_dir() else "iCloud Drive가 꺼져 있어 쓰지 않았습니다")
     elif sys.argv[1:2] == ["매일실행"]:  # 예약(launchd)이 부른다: 스킬 daily-paper를 끝까지 돌리고 끝난다
         ok, msg = start_run(extra=sys.argv[2:] == ["추가"])
         print(msg)
