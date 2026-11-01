@@ -38,7 +38,7 @@ struct LibraryView: View {
                     Picker("묶기", selection: $group) {
                         Text("신간 매대").tag("new"); Text("키워드별").tag("kw"); Text("읽기 상태별").tag("status"); Text("호별").tag("issue")
                     }
-                    Picker("보기", selection: $mode) { Text("책장").tag("case"); Text("표지").tag("grid") }
+                    Picker("보기", selection: $mode) { Text("책장").tag("case"); Text("표지").tag("grid"); Text("요약").tag("list") }
                 }
                 .pickerStyle(.segmented).padding(.vertical, 16)
 
@@ -50,6 +50,8 @@ struct LibraryView: View {
                     none("“\(q)”에 맞는 논문이 서재에 없습니다.")
                 } else if mode == "case" {
                     bookcase(shelves)
+                } else if mode == "list" {
+                    summaries(shelves.filter { !$0.items.isEmpty })
                 } else {
                     covers(shelves.filter { !$0.items.isEmpty })
                 }
@@ -141,6 +143,48 @@ struct LibraryView: View {
     private var newBadge: some View {
         Text("NEW").font(mono(10, .bold)).tracking(0.5).foregroundStyle(.white).padding(.horizontal, 6).padding(.vertical, 3)
             .background(Ink.red, in: RoundedRectangle(cornerRadius: 2)).shadow(color: .black.opacity(0.3), radius: 2, y: 2).offset(x: 6, y: -8)
+    }
+
+    // 요약 보기: 책마다 목적·방법·결과·한계를 펼쳐 둔다(누르면 서랍에서 링크까지)
+    private func summaries(_ shelves: [Shelf]) -> some View {
+        VStack(alignment: .leading, spacing: 34) {
+            ForEach(shelves) { g in
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(g.label.uppercased()).font(mono(13, .bold)).tracking(1).foregroundStyle(g.color)
+                        Spacer()
+                        Text("\(g.items.count)권").font(mono(12)).foregroundStyle(Ink.ink3)
+                    }
+                    .padding(.bottom, 6).overlay(alignment: .bottom) { Ink.ink.frame(height: 1) }
+                    ForEach(g.items) { p in
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack(alignment: .top, spacing: 14) {
+                                BookCover(p: p, c: lib.pal(p), width: 56)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 8) {
+                                        Text("NO.\(nos(p.issue))").font(mono(11, .semibold)).foregroundStyle(lib.kwColor(p.kw))
+                                        StatusTag(s: p.status)
+                                    }
+                                    Text(p.title).font(serif(17)).lineSpacing(3).multilineTextAlignment(.leading)
+                                    Text([p.authorShort, p.year.map(String.init) ?? "", p.venue].filter { !$0.isEmpty }.joined(separator: " · "))
+                                        .font(.system(size: 12)).foregroundStyle(Ink.ink2).lineLimit(2)
+                                }
+                            }
+                            .padding(.bottom, 12)
+                            if p.table.isEmpty {
+                                if !p.tldr.isEmpty { Tldr(p: p, size: 15) }
+                            } else {
+                                SummaryTable(p: p)
+                            }
+                        }
+                        .padding(.vertical, 20).frame(maxWidth: .infinity, alignment: .leading)
+                        .overlay(alignment: .bottom) { Ink.rule.frame(height: 1) }
+                        .contentShape(Rectangle())
+                        .opens(p, $open)
+                    }
+                }
+            }
+        }
     }
 
     private func covers(_ shelves: [Shelf]) -> some View {
