@@ -242,6 +242,7 @@ private extension View {
 // 책을 누르면 열리는 요약 서랍
 struct BookDetail: View {
     let p: Paper, lib: Library
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ScrollView {
@@ -263,6 +264,15 @@ struct BookDetail: View {
             .foregroundStyle(Ink.ink).padding(.horizontal, 20).padding(.vertical, 28)
         }
         .background(Ink.paper)
+        .overlay(alignment: .topTrailing) {  // 스와이프로 잘 안 내려갈 때를 위해 닫기 버튼
+            Button { dismiss() } label: {
+                Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Ink.ink2)
+                    .frame(width: 36, height: 36).background(.white.opacity(0.9), in: Circle())
+                    .overlay(Circle().stroke(Ink.rule)).shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+            }
+            .accessibilityLabel("닫기")
+            .padding(.top, 16).padding(.trailing, 16)
+        }
         .presentationDragIndicator(.visible)
     }
 }
